@@ -1,0 +1,99 @@
+ТАБЛИЦА: invitations (Приглашения в клуб)
+
+НАЗНАЧЕНИЕ:
+Отслеживание работы с потенциальными участниками клуба, которым были оставлены визитки.
+
+ПОЛЯ ТАБЛИЦЫ:
+
+1. id
+   - Тип: INT
+   - Автоинкремент: Да
+   - Обязательное: Да
+   - Описание: Уникальный идентификатор приглашения
+   - Первичный ключ: Да
+
+2. car_id
+   - Тип: INT
+   - Обязательное: Да
+   - Внешний ключ: Ссылка на таблицу cars(id)
+   - Описание: ID автомобиля, владельцу которого оставлена визитка
+
+3. invitation_date
+   - Тип: DATE
+   - Обязательное: Да
+   - Описание: Дата, когда была оставлена визитка
+
+4. location
+   - Тип: VARCHAR(255)
+   - Обязательное: Да
+   - Описание: Место, где была оставлена визитка (адрес, название ТЦ, парковки и т.д.)
+
+5. inviter_member_id
+   - Тип: INT
+   - Обязательное: Да
+   - Внешний ключ: Ссылка на таблицу members(id)
+   - Описание: ID участника клуба, который оставил визитку
+
+6. status
+   - Тип: ENUM
+   - Значения: 'новое', 'нет ответа', 'на связи', 'встреча назначена', 'встреча проведена', 'отказ', 'вступил в клуб'
+   - По умолчанию: 'новое'
+   - Обязательное: Да
+   - Описание: Текущий статус работы с приглашением
+
+7. contact_phone
+   - Тип: VARCHAR(20)
+   - Обязательное: Нет
+   - Описание: Контактный телефон потенциального участника (если удалось получить)
+
+8. contact_name
+   - Тип: VARCHAR(100)
+   - Обязательное: Нет
+   - Описание: Имя потенциального участника (если удалось узнать)
+
+9. next_contact_date
+   - Тип: DATE
+   - Обязательное: Нет
+   - Описание: Дата следующего запланированного контакта
+
+10. meeting_date
+    - Тип: DATETIME
+    - Обязательное: Нет
+    - Описание: Дата и время назначенной встречи
+
+11. notes
+    - Тип: TEXT
+    - Обязательное: Нет
+    - Описание: Заметки о контактах, договорённостях, впечатлениях
+
+12. created_at
+    - Тип: TIMESTAMP
+    - По умолчанию: CURRENT_TIMESTAMP
+    - Обязательное: Да
+    - Описание: Дата и время создания записи
+
+13. updated_at
+    - Тип: TIMESTAMP
+    - По умолчанию: CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    - Обязательное: Да
+    - Описание: Дата и время последнего обновления записи
+
+SQL ЗАПРОС ДЛЯ СОЗДАНИЯ ТАБЛИЦЫ:
+
+CREATE TABLE invitations (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    car_id INT NOT NULL,
+    invitation_date DATE NOT NULL,
+    location VARCHAR(255) NOT NULL,
+    inviter_member_id INT NOT NULL,
+    status ENUM('новое', 'нет ответа', 'на связи', 'встреча назначена', 'встреча проведена', 'отказ', 'вступил в клуб') DEFAULT 'новое',
+    contact_phone VARCHAR(20),
+    contact_name VARCHAR(100),
+    next_contact_date DATE,
+    meeting_date DATETIME,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE RESTRICT,
+    FOREIGN KEY (inviter_member_id) REFERENCES members(id) ON DELETE RESTRICT
+); 

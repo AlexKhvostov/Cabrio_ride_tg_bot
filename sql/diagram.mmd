@@ -1,0 +1,56 @@
+erDiagram
+    members ||--o{ cars : "имеет"
+    members ||--o{ invitations : "оставляет"
+    cars ||--o{ invitations : "получает"
+
+    members {
+        int id PK
+        bigint telegram_id
+        string first_name
+        string last_name
+        string nickname
+        string alias
+        date birth_date
+        string phone
+        string email
+        string country
+        string city
+        string photo_url
+        date join_date
+        enum status
+        text about
+        text notes
+    }
+
+    cars {
+        int id PK
+        int member_id FK
+        string brand
+        string model
+        string generation
+        int year
+        string color
+        string vin
+        string reg_number
+        decimal engine_volume
+        int engine_power
+        enum roof_type
+        enum status
+        text description
+        text notes
+        text photos
+    }
+
+    invitations {
+        int id PK
+        int car_id FK
+        date invitation_date
+        string location
+        int inviter_member_id FK
+        enum status
+        string contact_phone
+        string contact_name
+        date next_contact_date
+        datetime meeting_date
+        text notes
+    } 
