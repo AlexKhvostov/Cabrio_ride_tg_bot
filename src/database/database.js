@@ -4,6 +4,7 @@ const config = require('../config/config');
 class Database {
     constructor() {
         this.connection = null;
+        this.isConnected = false;
         this.init();
     }
 
@@ -23,15 +24,29 @@ class Database {
             // Проверяем подключение
             await this.connection.ping();
             console.log('✅ База данных доступна');
+            this.isConnected = true;
             
         } catch (error) {
             console.error('❌ Ошибка подключения к базе данных:', error.message);
-            throw error;
+            console.log('⚠️  Бот будет работать в режиме без базы данных');
+            this.isConnected = false;
+            // НЕ выбрасываем ошибку, позволяем боту работать без БД
         }
+    }
+
+    // Проверка подключения перед выполнением запросов
+    checkConnection() {
+        if (!this.isConnected) {
+            console.log('⚠️  База данных недоступна. Операция пропущена.');
+            return false;
+        }
+        return true;
     }
 
     // Методы для работы с участниками
     async getMemberByTelegramId(telegramId) {
+        if (!this.checkConnection()) return null;
+        
         try {
             const [rows] = await this.connection.execute(
                 'SELECT * FROM members WHERE telegram_id = ?',
@@ -40,11 +55,36 @@ class Database {
             return rows.length > 0 ? rows[0] : null;
         } catch (error) {
             console.error('Ошибка получения участника:', error);
-            throw error;
+            
+            // Если ошибка связана с подключением, пытаемся переподключиться
+            if (error.code === 'ECONNRESET' || error.code === 'PROTOCOL_CONNECTION_LOST') {
+                console.log('🔄 Попытка переподключения к базе данных...');
+                try {
+                    await this.init();
+                    if (this.isConnected) {
+                        console.log('✅ Переподключение успешно');
+                        
+                        // Повторяем запрос
+                        const [rows] = await this.connection.execute(
+                            'SELECT * FROM members WHERE telegram_id = ?',
+                            [telegramId]
+                        );
+                        return rows.length > 0 ? rows[0] : null;
+                    }
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError);
+                    return null; // Возвращаем null вместо выброса ошибки
+                }
+            }
+            
+            // Для других ошибок возвращаем null
+            return null;
         }
     }
 
     async getMemberById(memberId) {
+        if (!this.checkConnection()) return null;
+        
         try {
             const [rows] = await this.connection.execute(
                 'SELECT * FROM members WHERE id = ?',
@@ -53,11 +93,16 @@ class Database {
             return rows.length > 0 ? rows[0] : null;
         } catch (error) {
             console.error('Ошибка получения участника по ID:', error);
-            throw error;
+            return null;
         }
     }
 
     async createMember(memberData) {
+        if (!this.checkConnection()) {
+            console.log('⚠️  Создание участника пропущено - БД недоступна');
+            return null; // Возвращаем null, чтобы показать, что операция не удалась
+        }
+        
         try {
             console.log('🔍 Отладка createMember:');
             console.log('memberData:', JSON.stringify(memberData, null, 2));
@@ -94,11 +139,13 @@ class Database {
             return { id: result.insertId, ...memberData };
         } catch (error) {
             console.error('Ошибка создания участника:', error);
-            throw error;
+            return null;
         }
     }
 
     async updateMember(telegramId, updates) {
+        if (!this.checkConnection()) return { affectedRows: 0 };
+        
         try {
             const fields = Object.keys(updates);
             const values = Object.values(updates);
@@ -112,12 +159,14 @@ class Database {
             return { affectedRows: result.affectedRows };
         } catch (error) {
             console.error('Ошибка обновления участника:', error);
-            throw error;
+            return { affectedRows: 0 };
         }
     }
 
     // Методы для работы с автомобилями
     async getCarsByMemberId(memberId) {
+        if (!this.checkConnection()) return [];
+        
         try {
             const [rows] = await this.connection.execute(
                 'SELECT * FROM cars WHERE member_id = ? ORDER BY created_at DESC',
@@ -126,11 +175,16 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка получения автомобилей:', error);
-            throw error;
+            return [];
         }
     }
 
     async createCar(carData) {
+        if (!this.checkConnection()) {
+            console.log('⚠️  Создание автомобиля пропущено - БД недоступна');
+            return null; // Возвращаем null, чтобы показать, что операция не удалась
+        }
+        
         try {
             const {
                 member_id, brand, model, generation, year, color,
@@ -165,11 +219,13 @@ class Database {
             return { id: result.insertId, ...carData };
         } catch (error) {
             console.error('Ошибка создания автомобиля:', error);
-            throw error;
+            return null;
         }
     }
 
     async updateCar(carId, updates) {
+        if (!this.checkConnection()) return { affectedRows: 0 };
+        
         try {
             const fields = Object.keys(updates);
             const values = Object.values(updates);
@@ -183,12 +239,17 @@ class Database {
             return { affectedRows: result.affectedRows };
         } catch (error) {
             console.error('Ошибка обновления автомобиля:', error);
-            throw error;
+            return { affectedRows: 0 };
         }
     }
 
     // Методы для работы с приглашениями
     async createInvitation(invitationData) {
+        if (!this.checkConnection()) {
+            console.log('⚠️  Создание приглашения пропущено - БД недоступна');
+            return null; // Возвращаем null, чтобы показать, что операция не удалась
+        }
+        
         try {
             const {
                 car_id, invitation_date, location, inviter_member_id,
@@ -209,11 +270,13 @@ class Database {
             return { id: result.insertId, ...invitationData };
         } catch (error) {
             console.error('Ошибка создания приглашения:', error);
-            throw error;
+            return null;
         }
     }
 
     async getInvitationsByInviter(inviterMemberId) {
+        if (!this.checkConnection()) return [];
+        
         try {
             const [rows] = await this.connection.execute(
                 `SELECT i.*, c.brand, c.model, c.year, c.reg_number
@@ -226,11 +289,13 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка получения приглашений:', error);
-            throw error;
+            return [];
         }
     }
 
     async getInvitationsByCar(carId) {
+        if (!this.checkConnection()) return [];
+        
         try {
             const [rows] = await this.connection.execute(
                 `SELECT i.*, m.first_name, m.last_name, m.nickname
@@ -243,11 +308,13 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка получения приглашений по автомобилю:', error);
-            throw error;
+            return [];
         }
     }
 
     async updateInvitation(invitationId, updates) {
+        if (!this.checkConnection()) return { affectedRows: 0 };
+        
         try {
             const fields = Object.keys(updates);
             const values = Object.values(updates);
@@ -261,12 +328,24 @@ class Database {
             return { affectedRows: result.affectedRows };
         } catch (error) {
             console.error('Ошибка обновления приглашения:', error);
-            throw error;
+            return { affectedRows: 0 };
         }
     }
 
     // Статистика
     async getStats() {
+        if (!this.checkConnection()) {
+            return {
+                totalMembers: 0,
+                activeMembers: 0,
+                totalCars: 0,
+                totalInvitations: 0,
+                successfulInvitations: 0,
+                leftMembers: 0,
+                leftCars: 0
+            };
+        }
+        
         try {
             const queries = [
                 'SELECT COUNT(*) as count FROM members WHERE status != "вышел"', // Исключаем вышедших
@@ -293,12 +372,22 @@ class Database {
             };
         } catch (error) {
             console.error('Ошибка получения статистики:', error);
-            throw error;
+            return {
+                totalMembers: 0,
+                activeMembers: 0,
+                totalCars: 0,
+                totalInvitations: 0,
+                successfulInvitations: 0,
+                leftMembers: 0,
+                leftCars: 0
+            };
         }
     }
 
     // Поиск автомобилей по регистрационному номеру
     async getCarsByRegNumber(regNumber) {
+        if (!this.checkConnection()) return [];
+        
         try {
             const [rows] = await this.connection.execute(
                 'SELECT * FROM cars WHERE reg_number = ? ORDER BY created_at DESC',
@@ -307,12 +396,14 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка поиска автомобилей по номеру:', error);
-            throw error;
+            return [];
         }
     }
 
     // Поиск автомобилей по частичному совпадению номера
     async searchCarsByRegNumber(partialRegNumber) {
+        if (!this.checkConnection()) return [];
+        
         try {
             const searchPattern = `%${partialRegNumber.toUpperCase()}%`;
             const [rows] = await this.connection.execute(
@@ -322,12 +413,14 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка поиска автомобилей по частичному номеру:', error);
-            throw error;
+            return [];
         }
     }
 
     // Поиск автомобилей без владельца для приглашений
     async getCarsWithoutOwner() {
+        if (!this.checkConnection()) return [];
+        
         try {
             const [rows] = await this.connection.execute(
                 'SELECT * FROM cars WHERE member_id IS NULL AND status = "приглашение" ORDER BY created_at DESC'
@@ -335,12 +428,12 @@ class Database {
             return rows;
         } catch (error) {
             console.error('Ошибка получения автомобилей без владельца:', error);
-            throw error;
+            return [];
         }
     }
 
     async close() {
-        if (this.connection) {
+        if (this.connection && this.isConnected) {
             try {
                 await this.connection.end();
                 console.log('✅ Соединение с базой данных закрыто');

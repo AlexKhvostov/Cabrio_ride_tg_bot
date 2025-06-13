@@ -1,5 +1,3 @@
-require('dotenv').config();
-
 // Диагностика загрузки переменных окружения
 console.log('🔍 Диагностика переменных окружения:');
 console.log('BOT_TOKEN:', process.env.BOT_TOKEN ? 'Загружен ✅' : 'Не найден ❌');
@@ -25,8 +23,8 @@ module.exports = {
     
     // Настройки файлов
     UPLOADS: {
-        membersPath: '../../uploads/members/',
-        carsPath: '../../uploads/cars/',
+        membersPath: './uploads/members/',
+        carsPath: './uploads/cars/',
         maxFileSize: 5 * 1024 * 1024, // 5MB
         allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
     },

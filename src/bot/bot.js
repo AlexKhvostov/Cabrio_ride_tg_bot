@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
 const db = require('../database/database');
+const { formatDate } = require('../utils/localization');
 
 // Создаём экземпляр бота
 const bot = new TelegramBot(config.BOT_TOKEN, { 
@@ -34,27 +35,35 @@ async function sendGroupNotification(message, options = {}) {
 
 async function sendGroupPhoto(photoPath, caption, options = {}) {
     try {
-        console.log('📸 Отправляем фото в группу:', photoPath);
+        console.log('📸 Отправляем фото в группу:');
+        console.log('   Photo Path:', photoPath);
+        console.log('   Caption:', caption);
+        console.log('   Chat ID:', config.CHAT_ID);
         
         // Проверяем, является ли photoPath файлом или URL
         let photoSource;
         if (photoPath && photoPath.startsWith('http')) {
             // Это URL
             photoSource = photoPath;
-            console.log('📡 Используем URL для фото');
+            console.log('📡 Используем URL для фото:', photoSource);
         } else {
             // Это локальный файл
-            if (!photoPath || !fs.existsSync(photoPath)) {
-                console.error('❌ Файл не найден:', photoPath);
+            const fullPath = path.resolve(photoPath);
+            console.log('   Полный путь к файлу:', fullPath);
+            console.log('   Файл существует:', fs.existsSync(fullPath));
+            
+            if (!photoPath || !fs.existsSync(fullPath)) {
+                console.error('❌ Файл не найден:', fullPath);
                 // Отправляем только текст без фото
                 await sendGroupNotification(caption, options);
                 return;
             }
             
-            photoSource = fs.createReadStream(photoPath);
-            console.log('📁 Используем локальный файл');
+            photoSource = fs.createReadStream(fullPath);
+            console.log('📁 Используем локальный файл:', fullPath);
         }
         
+        console.log('   Отправляем фото...');
         await bot.sendPhoto(config.CHAT_ID, photoSource, {
             caption: caption,
             parse_mode: 'Markdown',
@@ -64,9 +73,10 @@ async function sendGroupPhoto(photoPath, caption, options = {}) {
         
         console.log('✅ Фото отправлено успешно');
     } catch (error) {
-        console.error('❌ Ошибка отправки фото в группу:', error);
-        console.error('Путь к фото:', photoPath);
-        console.error('Детали ошибки:', error.message);
+        console.error('❌ Ошибка отправки фото в группу:');
+        console.error('   Photo Path:', photoPath);
+        console.error('   Error Message:', error.message);
+        console.error('   Full Error:', error);
         
         // Если не удалось отправить фото, отправляем только текст
         try {
@@ -113,8 +123,8 @@ async function checkAccess(msg) {
 function createUploadDirs() {
     const path = require('path');
     const dirs = [
-        path.join(__dirname, '../../uploads/members'),
-        path.join(__dirname, '../../uploads/cars')
+        path.resolve('./uploads/members'),
+        path.resolve('./uploads/cars')
     ];
     
     dirs.forEach(dir => {
@@ -140,7 +150,7 @@ bot.onText(/\/start/, async (msg) => {
             bot.sendMessage(msg.chat.id, 
                 `👋 С возвращением, ${existingMember.first_name}!\n\n` +
                 `Статус: ${existingMember.status}\n` +
-                `Дата вступления: ${existingMember.join_date}\n\n` +
+                `Дата вступления: ${formatDate(existingMember.join_date)}\n\n` +
                 'Используйте /menu для просмотра доступных команд.'
             );
         } else {
@@ -244,7 +254,7 @@ bot.onText(/\/skip/, async (msg) => {
     }
     
     // Обрабатываем как обычное сообщение с текстом "/skip"
-    if (userState.state === 'registering') {
+    if (userState.state === 'registration') {
         await handleRegistration(msg, userId, userState);
     } else if (userState.state === 'adding_car') {
         bot.sendMessage(msg.chat.id, '❌ В процессе добавления автомобиля нельзя пропускать поля.');
@@ -368,6 +378,81 @@ bot.on('callback_query', async (callbackQuery) => {
                 await startSearchByNumber(msg, userId);
                 break;
                 
+            case 'register':
+                // Начинаем процесс регистрации
+                const newUserState = { 
+                    state: 'registration', 
+                    step: 'name',
+                    data: {}
+                };
+                userStates.set(userId, newUserState);
+                
+                console.log(`🔧 Установлено состояние для пользователя ${userId}:`, newUserState);
+                console.log(`🔍 Проверка сохранения:`, userStates.get(userId));
+                
+                bot.sendMessage(msg.chat.id, 
+                    '📝 *Регистрация в клубе кабриолетов*\n\n' +
+                    '🚗 Добро пожаловать! Давайте зарегистрируем вас в нашем клубе.\n\n' +
+                    '👤 **Шаг 1 из 8:** Введите ваше имя:', 
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+                
+            case 'skip_step':
+                // Обрабатываем пропуск шага
+                const userStateForSkip = userStates.get(userId);
+                if (userStateForSkip) {
+                    if (userStateForSkip.state === 'registration') {
+                        // Создаем фиктивное сообщение с текстом /skip
+                        const skipMsg = { ...msg, text: '/skip' };
+                        await handleRegistration(skipMsg, userId, userStateForSkip);
+                    } else if (userStateForSkip.state === 'adding_car') {
+                        if (userStateForSkip.step === 'photos') {
+                            // Пропускаем фото и завершаем добавление автомобиля
+                            await completeAddCar(msg, userId, userStateForSkip.data);
+                        } else {
+                            bot.sendMessage(msg.chat.id, '❌ В процессе добавления автомобиля нельзя пропускать поля.');
+                        }
+                    } else if (userStateForSkip.state === 'creating_invitation') {
+                        // Создаем фиктивное сообщение с текстом /skip
+                        const skipMsg = { ...msg, text: '/skip' };
+                        await handleCreateInvitation(skipMsg, userId, userStateForSkip);
+                    }
+                }
+                break;
+                
+            case 'finish_photos':
+                // Обрабатываем завершение добавления фото
+                const userStateForFinish = userStates.get(userId);
+                if (userStateForFinish) {
+                    if (userStateForFinish.state === 'adding_car' && userStateForFinish.step === 'photos') {
+                        await completeAddCar(msg, userId, userStateForFinish.data);
+                    } else if (userStateForFinish.state === 'creating_invitation' && userStateForFinish.step === 'photos') {
+                        await completeCreateInvitation(msg, userId, userStateForFinish.data);
+                    }
+                }
+                break;
+                
+            case 'continue_photos':
+                // Пользователь хочет добавить ещё фото - просто отправляем подсказку
+                const userStateForContinue = userStates.get(userId);
+                if (userStateForContinue) {
+                    if (userStateForContinue.state === 'adding_car' && userStateForContinue.step === 'photos') {
+                        bot.sendMessage(msg.chat.id, '📸 Отправьте следующую фотографию автомобиля');
+                    } else if (userStateForContinue.state === 'creating_invitation' && userStateForContinue.step === 'photos') {
+                        bot.sendMessage(msg.chat.id, '📸 Отправьте следующую фотографию автомобиля');
+                    }
+                }
+                break;
+                
+            case 'finish_invitation':
+                // Завершаем создание приглашения
+                const userStateForFinishInvitation = userStates.get(userId);
+                if (userStateForFinishInvitation && userStateForFinishInvitation.state === 'creating_invitation') {
+                    await completeCreateInvitation(msg, userId, userStateForFinishInvitation.data);
+                }
+                break;
+                
             case 'menu':
             case 'back_to_menu':
                 // Показываем главное меню
@@ -399,22 +484,31 @@ bot.on('callback_query', async (callbackQuery) => {
                     }
                 };
                 
-                bot.editMessageText(
-                    '🚗 *Главное меню Cabrio Club*\n\n' +
+                const menuText = '🚗 *Главное меню Cabrio Club*\n\n' +
                     '👤 **Личный кабинет:**\n' +
                     '• Профиль и автомобили\n\n' +
                     '🎯 **Активности клуба:**\n' +
                     '• Приглашения и поиск\n\n' +
                     '📊 **Информация:**\n' +
                     '• Статистика и помощь\n\n' +
-                    '👇 *Выберите нужный раздел:*', 
-                    {
+                    '👇 *Выберите нужный раздел:*';
+                
+                try {
+                    // Пытаемся отредактировать сообщение
+                    await bot.editMessageText(menuText, {
                         chat_id: msg.chat.id,
                         message_id: msg.message_id,
                         parse_mode: 'Markdown',
                         ...keyboard
-                    }
-                );
+                    });
+                } catch (editError) {
+                    // Если не удалось отредактировать, отправляем новое сообщение
+                    console.log('Не удалось отредактировать сообщение, отправляем новое:', editError.message);
+                    await bot.sendMessage(msg.chat.id, menuText, {
+                        parse_mode: 'Markdown',
+                        ...keyboard
+                    });
+                }
                 break;
                 
             case 'edit_profile':
@@ -670,10 +764,29 @@ bot.on('left_chat_member', async (msg) => {
 // Функция показа профиля пользователя
 async function showUserProfile(msg, userId) {
     try {
+        console.log(`🔍 Поиск пользователя с ID: ${userId}`);
         const member = await db.getMemberByTelegramId(userId);
         
         if (!member) {
-            bot.sendMessage(msg.chat.id, '❌ Вы не зарегистрированы. Используйте /register');
+            console.log(`❌ Пользователь ${userId} не найден в базе данных`);
+            const keyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '📝 Зарегистрироваться', callback_data: 'register' }],
+                        [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '❌ *Вы не зарегистрированы в клубе*\n\n' +
+                '🚗 Для доступа к функциям бота необходимо пройти регистрацию.\n\n' +
+                '👇 Нажмите кнопку ниже для начала регистрации:', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...keyboard 
+                }
+            );
             return;
         }
         
@@ -681,8 +794,8 @@ async function showUserProfile(msg, userId) {
         profileText += `**Имя:** ${member.first_name}`;
         if (member.last_name) profileText += ` ${member.last_name}`;
         profileText += `\n**Статус:** ${member.status}`;
-        profileText += `\n**Дата вступления:** ${member.join_date}`;
-        if (member.left_date) profileText += `\n**Дата выхода:** ${member.left_date}`;
+        profileText += `\n**Дата вступления:** ${formatDate(member.join_date)}`;
+        if (member.left_date) profileText += `\n**Дата выхода:** ${formatDate(member.left_date)}`;
         
         if (member.nickname) profileText += `\n**Никнейм:** ${member.nickname}`;
         if (member.alias) profileText += `\n**Позывной:** ${member.alias}`;
@@ -703,17 +816,26 @@ async function showUserProfile(msg, userId) {
         // Если есть фото профиля, отправляем с фото
         if (member.photo_url && member.photo_url.trim() !== '') {
             try {
+                console.log('👤 Отправляем фото профиля:');
+                console.log('   Photo URL from DB:', member.photo_url);
+                
                 const fs = require('fs');
                 const path = require('path');
-                const photoPath = path.join(__dirname, '../../uploads/members', member.photo_url);
+                const photoPath = path.resolve('./uploads/members', member.photo_url);
+                console.log('   Resolved Photo Path:', photoPath);
+                console.log('   File exists:', fs.existsSync(photoPath));
                 
                 if (fs.existsSync(photoPath)) {
-                    await bot.sendPhoto(msg.chat.id, photoPath, {
+                    console.log('   Отправляем фото профиля...');
+                    const photoStream = fs.createReadStream(photoPath);
+                    await bot.sendPhoto(msg.chat.id, photoStream, {
                         caption: profileText,
                         parse_mode: 'Markdown',
                         ...keyboard
                     });
+                    console.log('   ✅ Фото профиля отправлено');
                 } else {
+                    console.log('   ❌ Файл фото профиля не найден');
                     // Если файл не найден, отправляем текст
                     bot.sendMessage(msg.chat.id, profileText + '\n\n📷 *Фото профиля не найдено*', { 
                         parse_mode: 'Markdown', 
@@ -721,7 +843,9 @@ async function showUserProfile(msg, userId) {
                     });
                 }
             } catch (error) {
-                console.error('Ошибка отправки фото профиля:', error);
+                console.error('❌ Ошибка отправки фото профиля:');
+                console.error('   Photo URL:', member.photo_url);
+                console.error('   Error:', error);
                 bot.sendMessage(msg.chat.id, profileText + '\n\n📷 *Ошибка загрузки фото*', { 
                     parse_mode: 'Markdown', 
                     ...keyboard 
@@ -744,10 +868,29 @@ async function showUserProfile(msg, userId) {
 // Функция показа автомобилей пользователя
 async function showUserCars(msg, userId) {
     try {
+        console.log(`🔍 Поиск пользователя для показа авто с ID: ${userId}`);
         const member = await db.getMemberByTelegramId(userId);
         
         if (!member) {
-            bot.sendMessage(msg.chat.id, '❌ Вы не зарегистрированы');
+            console.log(`❌ Пользователь ${userId} не найден при показе авто`);
+            const keyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '📝 Зарегистрироваться', callback_data: 'register' }],
+                        [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '❌ *Вы не зарегистрированы в клубе*\n\n' +
+                '🚗 Для просмотра автомобилей необходимо пройти регистрацию.\n\n' +
+                '👇 Нажмите кнопку ниже для начала регистрации:', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...keyboard 
+                }
+            );
             return;
         }
         
@@ -791,7 +934,8 @@ async function showUserCars(msg, userId) {
                                 carText += `\n📷 Фото: 1 из ${photos.length}`;
                             }
                             
-                            await bot.sendPhoto(msg.chat.id, photoPath, {
+                            const carPhotoStream = fs.createReadStream(photoPath);
+                            await bot.sendPhoto(msg.chat.id, carPhotoStream, {
                                 caption: carText,
                                 parse_mode: 'Markdown'
                             });
@@ -886,10 +1030,18 @@ bot.on('message', async (msg) => {
     const userId = msg.from.id;
     const userState = userStates.get(userId);
     
-    if (!userState) return; // Нет активного состояния
+    console.log(`📝 Получено сообщение от пользователя ${userId}: "${msg.text}"`);
+    console.log(`🗺️ Размер userStates Map:`, userStates.size);
+    console.log(`🔍 Состояние пользователя:`, userState);
+    console.log(`🔍 Все состояния:`, Array.from(userStates.entries()));
+    
+    if (!userState) {
+        console.log(`❌ Нет активного состояния для пользователя ${userId}`);
+        return; // Нет активного состояния
+    }
     
     try {
-        if (userState.state === 'registering') {
+        if (userState.state === 'registration') {
             await handleRegistration(msg, userId, userState);
         } else if (userState.state === 'adding_car') {
             await handleAddCar(msg, userId, userState);
@@ -919,7 +1071,7 @@ bot.on('photo', async (msg) => {
     }
     
     try {
-        if (userState.state === 'registering') {
+        if (userState.state === 'registration') {
             await handlePhotoRegistration(msg, userId, userState);
         } else if (userState.state === 'adding_car') {
             await handleCarPhoto(msg, userId, userState);
@@ -944,9 +1096,21 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'last_name';
             userStates.set(userId, userState);
             
+            const lastNameKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
                 `Приятно познакомиться, ${data.first_name}! 👋\n\n` +
-                'Введите вашу фамилию (или нажмите /skip если не хотите указывать):'
+                '👤 **Шаг 2 из 8:** Введите вашу фамилию:', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...lastNameKeyboard 
+                }
             );
             break;
             
@@ -958,9 +1122,20 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'city';
             userStates.set(userId, userState);
             
+            const cityKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
-                'В каком городе вы живёте? 🏙️\n' +
-                '(или нажмите /skip)'
+                '🏙️ **Шаг 3 из 8:** В каком городе вы живёте?', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...cityKeyboard 
+                }
             );
             break;
             
@@ -972,11 +1147,22 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'country';
             userStates.set(userId, userState);
             
+            const countryKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить (Беларусь)', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
-                'В какой стране вы живёте? 🌍\n' +
+                '🌍 **Шаг 4 из 8:** В какой стране вы живёте?\n\n' +
                 'Наш клуб базируется в Минске, Беларусь.\n' +
-                'Примеры: Беларусь, Россия, Казахстан, Украина\n' +
-                '(или нажмите /skip, по умолчанию будет "Беларусь")'
+                '*Примеры:* Беларусь, Россия, Казахстан, Украина', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...countryKeyboard 
+                }
             );
             break;
             
@@ -988,10 +1174,21 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'phone';
             userStates.set(userId, userState);
             
+            const phoneKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
-                'Введите ваш номер телефона 📱\n' +
-                'Например: +375 (33) 993-22-88\n' +
-                '(или нажмите /skip)'
+                '📱 **Шаг 5 из 8:** Введите ваш номер телефона\n\n' +
+                '*Например:* +375 (33) 993-22-88', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...phoneKeyboard 
+                }
             );
             break;
             
@@ -1003,10 +1200,21 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'about';
             userStates.set(userId, userState);
             
+            const aboutKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
-                'Расскажите немного о себе 📝\n' +
-                'Какие у вас автомобили? Как давно увлекаетесь кабриолетами?\n' +
-                '(или нажмите /skip)'
+                '📝 **Шаг 6 из 8:** Расскажите немного о себе\n\n' +
+                'Какие у вас автомобили? Как давно увлекаетесь кабриолетами?', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...aboutKeyboard 
+                }
             );
             break;
             
@@ -1018,10 +1226,21 @@ async function handleRegistration(msg, userId, userState) {
             userState.step = 'photo';
             userStates.set(userId, userState);
             
+            const photoKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить фото', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
-                '📸 Загрузите ваше фото для профиля\n' +
-                'Это поможет другим участникам узнать вас!\n\n' +
-                '(или нажмите /skip если не хотите добавлять фото)'
+                '📸 **Шаг 7 из 8:** Загрузите ваше фото для профиля\n\n' +
+                'Это поможет другим участникам узнать вас!', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...photoKeyboard 
+                }
             );
             break;
             
@@ -1031,8 +1250,17 @@ async function handleRegistration(msg, userId, userState) {
                 await completeRegistration(msg, userId, data);
             } else if (msg.text) {
                 // Пользователь ввел текст вместо фото
+                const photoKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '⏭️ Пропустить фото', callback_data: 'skip_step' }]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
-                    '📸 Пожалуйста, отправьте фотографию или нажмите /skip'
+                    '📸 Пожалуйста, отправьте фотографию или нажмите кнопку "Пропустить"', 
+                    photoKeyboard
                 );
             }
             // Если это фото - оно обрабатывается в handlePhotoRegistration
@@ -1068,6 +1296,22 @@ async function completeRegistration(msg, userId, data) {
         // Сохраняем в базу данных
         const newMember = await db.createMember(memberData);
         
+        // Проверяем, удалось ли сохранить данные
+        if (!newMember) {
+            console.error('❌ Не удалось сохранить данные участника в БД');
+            userStates.delete(userId);
+            
+            bot.sendMessage(msg.chat.id, 
+                '❌ *Ошибка сохранения данных*\n\n' +
+                '🔧 База данных временно недоступна.\n' +
+                'Ваши данные не были сохранены.\n\n' +
+                '🔄 Пожалуйста, попробуйте зарегистрироваться позже командой /register\n\n' +
+                '📞 Если проблема повторится, обратитесь к администратору.',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        
         // Удаляем состояние пользователя
         userStates.delete(userId);
         
@@ -1078,7 +1322,7 @@ async function completeRegistration(msg, userId, data) {
         if (memberData.city) confirmationText += `\n🏙️ **Город:** ${memberData.city}`;
         if (memberData.country) confirmationText += `\n🌍 **Страна:** ${memberData.country}`;
         if (memberData.phone) confirmationText += `\n📱 **Телефон:** ${memberData.phone}`;
-        confirmationText += `\n📅 **Дата вступления:** ${memberData.join_date}`;
+        confirmationText += `\n📅 **Дата вступления:** ${formatDate(memberData.join_date)}`;
         confirmationText += `\n📊 **Статус:** ${memberData.status}`;
         
         confirmationText += '\n\n🚗 Теперь вы можете:';
@@ -1177,7 +1421,7 @@ async function showUserInvitations(msg, userId) {
         invitations.forEach((invitation, index) => {
             invitationsText += `**${index + 1}.** ${invitation.brand} ${invitation.model}`;
             if (invitation.reg_number) invitationsText += ` (${invitation.reg_number})`;
-            invitationsText += `\n📅 Дата: ${invitation.invitation_date}`;
+            invitationsText += `\n📅 Дата: ${formatDate(invitation.invitation_date)}`;
             invitationsText += `\n📍 Место: ${invitation.location}`;
             invitationsText += `\n📊 Статус: ${invitation.status}`;
             if (invitation.contact_name) invitationsText += `\n📱 Контакты: ${invitation.contact_name}`;
@@ -1347,11 +1591,25 @@ async function handleAddCar(msg, userId, userState) {
                 userState.step = 'photos';
                 userStates.set(userId, userState);
                 
+                const carPhotosKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Закончить', callback_data: 'finish_photos' },
+                                { text: '⏭️ Пропустить фото', callback_data: 'skip_step' }
+                            ]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
                     `Номер: ${data.reg_number} ✅\n\n` +
-                    '📸 Теперь загрузите фотографии вашего автомобиля!\n' +
-                    'Вы можете отправить несколько фото подряд.\n\n' +
-                    'Когда закончите, нажмите /done или /skip если не хотите добавлять фото.'
+                    '📸 **Шаг 5/5:** Загрузите фотографии вашего автомобиля!\n' +
+                    'Вы можете отправить несколько фото подряд.', 
+                    { 
+                        parse_mode: 'Markdown',
+                        ...carPhotosKeyboard 
+                    }
                 );
             }
             break;
@@ -1362,11 +1620,21 @@ async function handleAddCar(msg, userId, userState) {
                 await completeAddCar(msg, userId, data);
             } else if (msg.text) {
                 // Пользователь отправил текст вместо фото - даем подсказку
+                const carPhotosKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Закончить', callback_data: 'finish_photos' },
+                                { text: '⏭️ Пропустить фото', callback_data: 'skip_step' }
+                            ]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
                     '📸 Ожидается фотография автомобиля.\n\n' +
-                    'Отправьте фото или используйте команды:\n' +
-                    '• /done - завершить добавление\n' +
-                    '• /skip - пропустить фотографии'
+                    'Отправьте фото или используйте кнопки ниже:', 
+                    carPhotosKeyboard
                 );
             }
             // Если это фото, оно обрабатывается в handleCarPhoto
@@ -1395,6 +1663,23 @@ async function completeAddCar(msg, userId, data) {
         };
         
         const newCar = await db.createCar(carData);
+        
+        // Проверяем, удалось ли сохранить автомобиль
+        if (!newCar) {
+            console.error('❌ Не удалось сохранить данные автомобиля в БД');
+            userStates.delete(userId);
+            
+            bot.sendMessage(msg.chat.id, 
+                '❌ *Ошибка сохранения автомобиля*\n\n' +
+                '🔧 База данных временно недоступна.\n' +
+                'Данные автомобиля не были сохранены.\n\n' +
+                '🔄 Пожалуйста, попробуйте добавить автомобиль позже\n\n' +
+                '📞 Если проблема повторится, обратитесь к администратору.',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        
         userStates.delete(userId);
         
         let confirmText = `🎉 *Автомобиль добавлен успешно!*\n\n` +
@@ -1607,7 +1892,7 @@ async function handleCreateInvitation(msg, userId, userState) {
                         
                         if (invitations.length > 0) {
                             const lastInvitation = invitations[0];
-                            duplicateText += `📅 **Последнее:** ${lastInvitation.invitation_date}\n`;
+                            duplicateText += `📅 **Последнее:** ${formatDate(lastInvitation.invitation_date)}\n`;
                             duplicateText += `📍 **Место:** ${lastInvitation.location}\n`;
                         }
                         
@@ -1643,14 +1928,26 @@ async function handleCreateInvitation(msg, userId, userState) {
             userState.step = 'photos';
             userStates.set(userId, userState);
             
+            const invitationPhotosKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ Закончить фото', callback_data: 'finish_photos' },
+                            { text: '⏭️ Пропустить фото', callback_data: 'skip_step' }
+                        ]
+                    ]
+                }
+            };
+            
             bot.sendMessage(msg.chat.id, 
                 `🔢 Номер: ${data.reg_number} ✅\n\n` +
                 '📸 *Сфотографируйте автомобиль*\n' +
                 'Это поможет лучше идентифицировать автомобиль при повторной встрече.\n\n' +
-                '• Отправьте одну или несколько фотографий\n' +
-                '• /done - завершить загрузку фото\n' +
-                '• /skip - пропустить все фото',
-                { parse_mode: 'Markdown' }
+                '• Отправьте одну или несколько фотографий',
+                { 
+                    parse_mode: 'Markdown',
+                    ...invitationPhotosKeyboard 
+                }
             );
             break;
             
@@ -1660,14 +1957,26 @@ async function handleCreateInvitation(msg, userId, userState) {
                 userState.step = 'photos';
                 userStates.set(userId, userState);
                 
+                const invitationPhotosKeyboard2 = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Закончить фото', callback_data: 'finish_photos' },
+                                { text: '⏭️ Пропустить фото', callback_data: 'skip_step' }
+                            ]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
                     `🔢 Номер: ${data.reg_number} ✅\n\n` +
                     '📸 *Сфотографируйте автомобиль*\n' +
                     'Это поможет лучше идентифицировать автомобиль при повторной встрече.\n\n' +
-                    '• Отправьте одну или несколько фотографий\n' +
-                    '• /done - завершить загрузку фото\n' +
-                    '• /skip - пропустить все фото',
-                    { parse_mode: 'Markdown' }
+                    '• Отправьте одну или несколько фотографий',
+                    { 
+                        parse_mode: 'Markdown',
+                        ...invitationPhotosKeyboard2 
+                    }
                 );
             } else if (msg.text.trim() === '/cancel') {
                 // Отменяем создание приглашения
@@ -1707,10 +2016,21 @@ async function handleCreateInvitation(msg, userId, userState) {
             locationText += '🚗 *Марка автомобиля (необязательно)*\n';
             locationText += 'Если знаете марку, введите её:\n';
             locationText += 'Например: BMW, Mercedes-Benz, Audi, Porsche\n\n';
-            locationText += '• /skip - пропустить этот вопрос\n';
-            locationText += '• /finish - завершить приглашение';
+            const locationKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                            { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                        ]
+                    ]
+                }
+            };
             
-            bot.sendMessage(msg.chat.id, locationText, { parse_mode: 'Markdown' });
+            bot.sendMessage(msg.chat.id, locationText, { 
+                parse_mode: 'Markdown',
+                ...locationKeyboard 
+            });
             break;
             
         case 'photos':
@@ -1719,22 +2039,46 @@ async function handleCreateInvitation(msg, userId, userState) {
                 userState.step = 'location';
                 userStates.set(userId, userState);
                 
+                const locationKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                                { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                            ]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
                     '📍 *Где вы оставили визитку? (необязательно)*\n' +
                     'Например: "Парковка ТЦ Галерея", "ул. Ленина 15", "возле дома"\n\n' +
-                    '• Введите место\n' +
-                    '• /skip - пропустить этот вопрос\n' +
-                    '• /finish - завершить приглашение',
-                    { parse_mode: 'Markdown' }
+                    '• Введите место',
+                    { 
+                        parse_mode: 'Markdown',
+                        ...locationKeyboard 
+                    }
                 );
             } else if (msg.text && (msg.text.trim() === '/done')) {
                 // Завершаем загрузку фото и переходим к следующему этапу
                 const photoCount = data.photos ? data.photos.length : 0;
                 
                 if (photoCount === 0) {
+                    const invitationPhotosKeyboard = {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: '✅ Закончить фото', callback_data: 'finish_photos' },
+                                    { text: '⏭️ Пропустить фото', callback_data: 'skip_step' }
+                                ]
+                            ]
+                        }
+                    };
+                    
                     bot.sendMessage(msg.chat.id, 
                         '📸 Вы не загрузили ни одного фото.\n' +
-                        'Отправьте фотографию или нажмите /skip для пропуска.'
+                        'Отправьте фотографию или используйте кнопки ниже:',
+                        invitationPhotosKeyboard
                     );
                     return;
                 }
@@ -1742,23 +2086,32 @@ async function handleCreateInvitation(msg, userId, userState) {
                 userState.step = 'location';
                 userStates.set(userId, userState);
                 
+                const locationKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                                { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                            ]
+                        ]
+                    }
+                };
+                
                 bot.sendMessage(msg.chat.id, 
                     `📸 Загружено фотографий: ${photoCount} ✅\n\n` +
                     '📍 *Где вы оставили визитку? (необязательно)*\n' +
                     'Например: "Парковка ТЦ Галерея", "ул. Ленина 15", "возле дома"\n\n' +
-                    '• Введите место\n' +
-                    '• /skip - пропустить этот вопрос\n' +
-                    '• /finish - завершить приглашение',
-                    { parse_mode: 'Markdown' }
+                    '• Введите место',
+                    { 
+                        parse_mode: 'Markdown',
+                        ...locationKeyboard 
+                    }
                 );
-            } else {
-                // Неизвестная команда на этапе фото
-                bot.sendMessage(msg.chat.id, 
-                    '❓ Неизвестная команда.\n\n' +
-                    '📸 Отправьте фотографию автомобиля или используйте команды:\n' +
-                    '• /done - завершить загрузку фото\n' +
-                    '• /skip - пропустить все фото'
-                );
+            } else if (msg.text) {
+                // Игнорируем текстовые сообщения на этапе фото (включая "undefined")
+                // Пользователь должен использовать кнопки или отправлять фото
+                console.log(`⚠️ Игнорируем текстовое сообщение на этапе фото: "${msg.text}"`);
+                return;
             }
             break;
             
@@ -1783,10 +2136,21 @@ async function handleCreateInvitation(msg, userId, userState) {
             brandText += '🚗 *Модель автомобиля (необязательно)*\n';
             brandText += 'Если знаете модель, введите её:\n';
             brandText += 'Например: E46, SLK, A4, 911\n\n';
-            brandText += '• /skip - пропустить этот вопрос\n';
-            brandText += '• /finish - завершить приглашение';
+            const brandKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                            { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                        ]
+                    ]
+                }
+            };
             
-            bot.sendMessage(msg.chat.id, brandText, { parse_mode: 'Markdown' });
+            bot.sendMessage(msg.chat.id, brandText, { 
+                parse_mode: 'Markdown',
+                ...brandKeyboard 
+            });
             break;
             
         case 'model':
@@ -1810,10 +2174,21 @@ async function handleCreateInvitation(msg, userId, userState) {
             modelText += '📱 *Контакты в визитке (необязательно)*\n';
             modelText += 'Какие контакты вы оставили?\n';
             modelText += 'Например: "Telegram @username", "+7 999 123-45-67", "Иван Петров"\n\n';
-            modelText += '• /skip - пропустить этот вопрос\n';
-            modelText += '• /finish - завершить приглашение';
+            const modelKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                            { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                        ]
+                    ]
+                }
+            };
             
-            bot.sendMessage(msg.chat.id, modelText, { parse_mode: 'Markdown' });
+            bot.sendMessage(msg.chat.id, modelText, { 
+                parse_mode: 'Markdown',
+                ...modelKeyboard 
+            });
             break;
             
         case 'contact_info':
@@ -1836,11 +2211,21 @@ async function handleCreateInvitation(msg, userId, userState) {
             }
             contactText += '📝 *Дополнительные заметки (необязательно)*\n';
             contactText += 'Например: "красивый кабриолет", "стоял долго", "владелец рядом был"\n\n';
-            contactText += '• Введите заметки\n';
-            contactText += '• /skip - пропустить этот вопрос\n';
-            contactText += '• /finish - завершить приглашение';
+            const contactKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⏭️ Пропустить', callback_data: 'skip_step' },
+                            { text: '✅ Завершить', callback_data: 'finish_invitation' }
+                        ]
+                    ]
+                }
+            };
             
-            bot.sendMessage(msg.chat.id, contactText, { parse_mode: 'Markdown' });
+            bot.sendMessage(msg.chat.id, contactText, { 
+                parse_mode: 'Markdown',
+                ...contactKeyboard 
+            });
             break;
             
         case 'notes':
@@ -1915,13 +2300,30 @@ async function completeCreateInvitation(msg, userId, data) {
                 member_id: null, // Автомобиль без владельца
                 brand: data.brand || 'Неизвестно',
                 model: data.model || 'Неизвестно',
-                year: null, // Год не указан
+                year: data.year || 1900, // Год по умолчанию если не указан
                 reg_number: data.reg_number,
                 status: 'приглашение',
                 photos: data.photos && data.photos.length > 0 ? JSON.stringify(data.photos) : null
             };
             
             car = await db.createCar(carData);
+            
+            // Проверяем, удалось ли создать автомобиль
+            if (!car) {
+                console.error('❌ Не удалось создать автомобиль для приглашения');
+                userStates.delete(userId);
+                
+                bot.sendMessage(msg.chat.id, 
+                    '❌ *Ошибка сохранения данных*\n\n' +
+                    '🔧 База данных временно недоступна.\n' +
+                    'Приглашение не было сохранено.\n\n' +
+                    '🔄 Пожалуйста, попробуйте создать приглашение позже\n\n' +
+                    '📞 Если проблема повторится, обратитесь к администратору.',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+            
             console.log('Создан новый автомобиль для приглашения:', car.id);
             console.log(`🔢 Номер: ${data.reg_number}`);
             console.log(`🚗 Марка/Модель: ${carData.brand}/${carData.model}`);
@@ -1944,13 +2346,29 @@ async function completeCreateInvitation(msg, userId, data) {
         
         const invitation = await db.createInvitation(invitationData);
         
+        // Проверяем, удалось ли создать приглашение
+        if (!invitation) {
+            console.error('❌ Не удалось создать приглашение');
+            userStates.delete(userId);
+            
+            bot.sendMessage(msg.chat.id, 
+                '❌ *Ошибка сохранения приглашения*\n\n' +
+                '🔧 База данных временно недоступна.\n' +
+                'Приглашение не было сохранено.\n\n' +
+                '🔄 Пожалуйста, попробуйте создать приглашение позже\n\n' +
+                '📞 Если проблема повторится, обратитесь к администратору.',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        
         // Удаляем состояние пользователя
         userStates.delete(userId);
         
         // Отправляем подтверждение
         let confirmText = '🎉 *Приглашение зафиксировано!*\n\n';
         confirmText += `🔢 **Номер:** ${data.reg_number}\n`;
-        confirmText += `📅 **Дата:** ${invitationData.invitation_date}\n`;
+        confirmText += `📅 **Дата:** ${formatDate(invitationData.invitation_date)}\n`;
         
         if (data.location) {
             confirmText += `📍 **Место:** ${data.location}\n`;
@@ -2012,7 +2430,7 @@ async function completeCreateInvitation(msg, userId, data) {
             invitationMessage += `\n🚗 **Модель:** ${data.model}`;
         }
         
-        invitationMessage += `\n📅 **Дата:** ${invitationData.invitation_date}`;
+        invitationMessage += `\n📅 **Дата:** ${formatDate(invitationData.invitation_date)}`;
         
         if (data.location && data.location !== 'Не указано') {
             invitationMessage += `\n📍 **Место:** ${data.location}`;
@@ -2063,29 +2481,51 @@ async function completeCreateInvitation(msg, userId, data) {
 // Функция загрузки и сохранения фотографии
 async function downloadPhoto(fileId, fileName) {
     try {
+        console.log('📸 Начинаем загрузку фото участника:');
+        console.log('   File ID:', fileId);
+        console.log('   File Name:', fileName);
+        
         // Получаем информацию о файле
         const file = await bot.getFile(fileId);
+        console.log('   Telegram File Info:', file);
+        
         const fileUrl = `https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`;
+        console.log('   Download URL:', fileUrl);
         
         // Создаём директории если их нет
         createUploadDirs();
         
         // Определяем путь для сохранения
-        const filePath = path.join(config.UPLOADS.membersPath, fileName);
+        const filePath = path.resolve(config.UPLOADS.membersPath, fileName);
+        console.log('   Save Path:', filePath);
+        console.log('   Members Path Config:', config.UPLOADS.membersPath);
         
         // Загружаем файл
+        console.log('   Загружаем файл с URL...');
         const response = await fetch(fileUrl);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
+        console.log('   Размер файла:', buffer.length, 'байт');
         
         // Сохраняем файл
         fs.writeFileSync(filePath, buffer);
+        console.log('   ✅ Файл сохранен успешно');
         
         // Возвращаем относительный путь
-        return `uploads/members/${fileName}`;
+        const relativePath = `uploads/members/${fileName}`;
+        console.log('   Возвращаем путь:', relativePath);
+        return relativePath;
         
     } catch (error) {
-        console.error('Ошибка загрузки фото:', error);
+        console.error('❌ Ошибка загрузки фото участника:');
+        console.error('   File ID:', fileId);
+        console.error('   File Name:', fileName);
+        console.error('   Error:', error);
         throw error;
     }
 }
@@ -2093,21 +2533,44 @@ async function downloadPhoto(fileId, fileName) {
 // Функция загрузки фото автомобиля
 async function downloadCarPhoto(fileId, fileName) {
     try {
+        console.log('🚗 Начинаем загрузку фото автомобиля:');
+        console.log('   File ID:', fileId);
+        console.log('   File Name:', fileName);
+        
         const file = await bot.getFile(fileId);
+        console.log('   Telegram File Info:', file);
+        
         const fileUrl = `https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`;
+        console.log('   Download URL:', fileUrl);
         
         createUploadDirs();
-        const filePath = path.join(config.UPLOADS.carsPath, fileName);
+        const filePath = path.resolve(config.UPLOADS.carsPath, fileName);
+        console.log('   Save Path:', filePath);
+        console.log('   Cars Path Config:', config.UPLOADS.carsPath);
         
+        console.log('   Загружаем файл с URL...');
         const response = await fetch(fileUrl);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        fs.writeFileSync(filePath, buffer);
+        console.log('   Размер файла:', buffer.length, 'байт');
         
-        return `uploads/cars/${fileName}`;
+        fs.writeFileSync(filePath, buffer);
+        console.log('   ✅ Файл сохранен успешно');
+        
+        const relativePath = `uploads/cars/${fileName}`;
+        console.log('   Возвращаем путь:', relativePath);
+        return relativePath;
         
     } catch (error) {
-        console.error('Ошибка загрузки фото автомобиля:', error);
+        console.error('❌ Ошибка загрузки фото автомобиля:');
+        console.error('   File ID:', fileId);
+        console.error('   File Name:', fileName);
+        console.error('   Error:', error);
         throw error;
     }
 }
@@ -2172,9 +2635,21 @@ async function handleCarPhoto(msg, userId, userState) {
         userState.data = data;
         userStates.set(userId, userState);
         
+        const carPhotosKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ Закончить', callback_data: 'finish_photos' },
+                        { text: '📸 Ещё фото', callback_data: 'continue_photos' }
+                    ]
+                ]
+            }
+        };
+        
         bot.sendMessage(msg.chat.id, 
             `✅ Фото ${data.photos.length} загружено!\n\n` +
-            'Можете отправить ещё фотографии или нажать /done для завершения.'
+            'Можете отправить ещё фотографии или закончить:', 
+            carPhotosKeyboard
         );
         
     } catch (error) {
@@ -2213,13 +2688,22 @@ async function handleInvitationPhoto(msg, userId, userState) {
         userState.data = data;
         userStates.set(userId, userState);
         
+        const invitationPhotosKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ Закончить', callback_data: 'finish_photos' },
+                        { text: '📸 Ещё фото', callback_data: 'continue_photos' }
+                    ]
+                ]
+            }
+        };
+        
         let photoText = `✅ Фото ${data.photos.length} загружено!\n\n`;
         photoText += `🔢 Номер: ${data.reg_number}\n`;
-        photoText += 'Можете отправить ещё фотографии или:\n';
-        photoText += '• /done - завершить загрузку фото\n';
-        photoText += '• /skip - пропустить все фото';
+        photoText += 'Можете отправить ещё фотографии или закончить:';
         
-        bot.sendMessage(msg.chat.id, photoText);
+        bot.sendMessage(msg.chat.id, photoText, invitationPhotosKeyboard);
         
     } catch (error) {
         console.error('Ошибка обработки фото приглашения:', error);
@@ -2324,7 +2808,7 @@ async function handleSearch(msg, userId, userState) {
                     resultsText += `\n📮 Приглашений: ${invitations.length}`;
                     if (invitations.length > 0) {
                         const lastInvitation = invitations[0]; // Последнее приглашение
-                        resultsText += `\n📅 Последнее: ${lastInvitation.invitation_date}`;
+                        resultsText += `\n📅 Последнее: ${formatDate(lastInvitation.invitation_date)}`;
                         resultsText += `\n📍 Место: ${lastInvitation.location}`;
                     }
                 } catch (error) {
