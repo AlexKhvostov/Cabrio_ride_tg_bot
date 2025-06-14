@@ -4,6 +4,7 @@ const path = require('path');
 const config = require('../config/config');
 const db = require('../database/database');
 const { formatDate } = require('../utils/localization');
+const { createAPI } = require('../api/api');
 
 // Создаём экземпляр бота
 const bot = new TelegramBot(config.BOT_TOKEN, { 
@@ -193,6 +194,10 @@ bot.onText(/\/menu/, async (msg) => {
                 // Информация
                 [
                     { text: '📊 Статистика клуба', callback_data: 'stats' },
+                    { text: '🌐 Веб-дашборд', callback_data: 'web_dashboard' }
+                ],
+                [
+                    { text: '🏠 Сайт клуба', callback_data: 'club_website' },
                     { text: '❓ Помощь', callback_data: 'help' }
                 ]
             ]
@@ -206,7 +211,7 @@ bot.onText(/\/menu/, async (msg) => {
         '🎯 **Активности клуба:**\n' +
         '• Приглашения и поиск\n\n' +
         '📊 **Информация:**\n' +
-        '• Статистика и помощь\n\n' +
+        '• Статистика, дашборд и сайт\n\n' +
         '👇 *Выберите нужный раздел:*', 
         { parse_mode: 'Markdown', ...keyboard }
     );
@@ -227,7 +232,7 @@ bot.onText(/\/register/, async (msg) => {
         }
         
         // Начинаем процесс регистрации
-        userStates.set(userId, { state: 'registering', step: 'name' });
+        userStates.set(userId, { state: 'registration', step: 'name' });
         
         bot.sendMessage(msg.chat.id, 
             '📝 *Регистрация в Cabrio Club*\n\n' +
@@ -370,6 +375,63 @@ bot.on('callback_query', async (callbackQuery) => {
                 await showStats(msg);
                 break;
                 
+            case 'web_dashboard':
+                bot.sendMessage(msg.chat.id, 
+                    '🌐 *Веб-дашборд Cabrio Club*\n\n' +
+                    '📊 **Полная информация о клубе:**\n' +
+                    '• Все участники с их автомобилями\n' +
+                    '• Детальная информация об автомобилях\n' +
+                    '• История приглашений\n' +
+                    '• Статистика клуба\n\n' +
+                    '🔗 **Ссылка на дашборд:**\n' +
+                    '[Открыть веб-дашборд](http://cabrioride.by:3001/)\n\n' +
+                    '💡 *Дашборд работает только при запущенном сервере бота*\n\n' +
+                    '📱 *Интерфейс адаптирован для мобильных устройств*',
+                    { 
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: '🔗 Открыть дашборд', url: 'http://cabrioride.by:3001/' }
+                                ],
+                                [
+                                    { text: '📋 Главное меню', callback_data: 'menu' }
+                                ]
+                            ]
+                        }
+                    }
+                );
+                break;
+                
+            case 'club_website':
+                bot.sendMessage(msg.chat.id, 
+                    '🏠 *Официальный сайт Cabrio Ride*\n\n' +
+                    '🌟 **Информация о клубе кабриолетов:**\n' +
+                    '• О клубе и сообществе\n' +
+                    '• Анонсы событий и поездок\n' +
+                    '• Галерея фотографий\n' +
+                    '• Каталог проверенных сервисов\n' +
+                    '• Контактная информация\n\n' +
+                    '🔗 **Ссылка на сайт:**\n' +
+                    '[Открыть сайт клуба](http://cabrioride.by)\n\n' +
+                    '📱 *Сайт адаптирован для всех устройств*\n' +
+                    '🌐 *Актуальная информация о деятельности клуба*',
+                    { 
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: '🏠 Открыть сайт', url: 'http://cabrioride.by' }
+                                ],
+                                [
+                                    { text: '📋 Главное меню', callback_data: 'menu' }
+                                ]
+                            ]
+                        }
+                    }
+                );
+                break;
+                
             case 'help':
                 await showHelp(msg);
                 break;
@@ -403,9 +465,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 const userStateForSkip = userStates.get(userId);
                 if (userStateForSkip) {
                     if (userStateForSkip.state === 'registration') {
-                        // Создаем фиктивное сообщение с текстом /skip
-                        const skipMsg = { ...msg, text: '/skip' };
-                        await handleRegistration(skipMsg, userId, userStateForSkip);
+                        await handleRegistrationSkip(msg, userId, userStateForSkip);
                     } else if (userStateForSkip.state === 'adding_car') {
                         if (userStateForSkip.step === 'photos') {
                             // Пропускаем фото и завершаем добавление автомобиля
@@ -414,9 +474,7 @@ bot.on('callback_query', async (callbackQuery) => {
                             bot.sendMessage(msg.chat.id, '❌ В процессе добавления автомобиля нельзя пропускать поля.');
                         }
                     } else if (userStateForSkip.state === 'creating_invitation') {
-                        // Создаем фиктивное сообщение с текстом /skip
-                        const skipMsg = { ...msg, text: '/skip' };
-                        await handleCreateInvitation(skipMsg, userId, userStateForSkip);
+                        await handleInvitationSkip(msg, userId, userStateForSkip);
                     }
                 }
                 break;
@@ -478,6 +536,10 @@ bot.on('callback_query', async (callbackQuery) => {
                             // Информация
                             [
                                 { text: '📊 Статистика клуба', callback_data: 'stats' },
+                                { text: '🌐 Веб-дашборд', callback_data: 'web_dashboard' }
+                            ],
+                            [
+                                { text: '🏠 Сайт клуба', callback_data: 'club_website' },
                                 { text: '❓ Помощь', callback_data: 'help' }
                             ]
                         ]
@@ -490,7 +552,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     '🎯 **Активности клуба:**\n' +
                     '• Приглашения и поиск\n\n' +
                     '📊 **Информация:**\n' +
-                    '• Статистика и помощь\n\n' +
+                    '• Статистика, дашборд и сайт\n\n' +
                     '👇 *Выберите нужный раздел:*';
                 
                 try {
@@ -1115,9 +1177,7 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'last_name':
-            if (msg.text.trim() !== '/skip') {
-                data.last_name = msg.text.trim();
-            }
+            data.last_name = msg.text.trim();
             userState.data = data;
             userState.step = 'city';
             userStates.set(userId, userState);
@@ -1140,9 +1200,7 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'city':
-            if (msg.text.trim() !== '/skip') {
-                data.city = msg.text.trim();
-            }
+            data.city = msg.text.trim();
             userState.data = data;
             userState.step = 'country';
             userStates.set(userId, userState);
@@ -1167,9 +1225,7 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'country':
-            if (msg.text.trim() !== '/skip') {
-                data.country = msg.text.trim();
-            }
+            data.country = msg.text.trim();
             userState.data = data;
             userState.step = 'phone';
             userStates.set(userId, userState);
@@ -1193,9 +1249,7 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'phone':
-            if (msg.text.trim() !== '/skip') {
-                data.phone = msg.text.trim();
-            }
+            data.phone = msg.text.trim();
             userState.data = data;
             userState.step = 'about';
             userStates.set(userId, userState);
@@ -1219,9 +1273,7 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'about':
-            if (msg.text.trim() !== '/skip') {
-                data.about = msg.text.trim();
-            }
+            data.about = msg.text.trim();
             userState.data = data;
             userState.step = 'photo';
             userStates.set(userId, userState);
@@ -1245,25 +1297,177 @@ async function handleRegistration(msg, userId, userState) {
             break;
             
         case 'photo':
-            if (msg.text && msg.text.trim() === '/skip') {
-                // Пропускаем фото
-                await completeRegistration(msg, userId, data);
-            } else if (msg.text) {
-                // Пользователь ввел текст вместо фото
-                const photoKeyboard = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '⏭️ Пропустить фото', callback_data: 'skip_step' }]
-                        ]
-                    }
-                };
-                
-                bot.sendMessage(msg.chat.id, 
-                    '📸 Пожалуйста, отправьте фотографию или нажмите кнопку "Пропустить"', 
-                    photoKeyboard
-                );
-            }
+            // Пользователь ввел текст вместо фото
+            const photoSkipKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить фото', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '📸 Пожалуйста, отправьте фотографию или нажмите кнопку "Пропустить"', 
+                photoSkipKeyboard
+            );
             // Если это фото - оно обрабатывается в handlePhotoRegistration
+            break;
+    }
+}
+
+// Обработка пропуска шага в регистрации
+async function handleRegistrationSkip(msg, userId, userState) {
+    const step = userState.step;
+    const data = userState.data || {};
+    
+    switch (step) {
+        case 'last_name':
+            // Пропускаем фамилию
+            userState.data = data;
+            userState.step = 'city';
+            userStates.set(userId, userState);
+            
+            const cityKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '🏙️ **Шаг 3 из 8:** В каком городе вы живёте?', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...cityKeyboard 
+                }
+            );
+            break;
+            
+        case 'city':
+            // Пропускаем город
+            userState.data = data;
+            userState.step = 'country';
+            userStates.set(userId, userState);
+            
+            const countryKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить (Беларусь)', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '🌍 **Шаг 4 из 8:** В какой стране вы живёте?\n\n' +
+                'Наш клуб базируется в Минске, Беларусь.\n' +
+                '*Примеры:* Беларусь, Россия, Казахстан, Украина', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...countryKeyboard 
+                }
+            );
+            break;
+            
+        case 'country':
+            // Пропускаем страну, устанавливаем Беларусь по умолчанию
+            data.country = 'Беларусь';
+            userState.data = data;
+            userState.step = 'phone';
+            userStates.set(userId, userState);
+            
+            const phoneKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '📱 **Шаг 5 из 8:** Введите ваш номер телефона\n\n' +
+                '*Например:* +375 (33) 993-22-88', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...phoneKeyboard 
+                }
+            );
+            break;
+            
+        case 'phone':
+            // Пропускаем телефон
+            userState.data = data;
+            userState.step = 'about';
+            userStates.set(userId, userState);
+            
+            const aboutKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '📝 **Шаг 6 из 8:** Расскажите немного о себе\n\n' +
+                'Какие у вас автомобили? Как давно увлекаетесь кабриолетами?', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...aboutKeyboard 
+                }
+            );
+            break;
+            
+        case 'about':
+            // Пропускаем описание
+            userState.data = data;
+            userState.step = 'photo';
+            userStates.set(userId, userState);
+            
+            const photoKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⏭️ Пропустить фото', callback_data: 'skip_step' }]
+                    ]
+                }
+            };
+            
+            bot.sendMessage(msg.chat.id, 
+                '📸 **Шаг 7 из 8:** Загрузите ваше фото для профиля\n\n' +
+                'Это поможет другим участникам узнать вас!', 
+                { 
+                    parse_mode: 'Markdown',
+                    ...photoKeyboard 
+                }
+            );
+            break;
+            
+        case 'photo':
+            // Пропускаем фото и завершаем регистрацию
+            await completeRegistration(msg, userId, data);
+            break;
+            
+        default:
+            bot.sendMessage(msg.chat.id, '❌ Неизвестный шаг регистрации');
+            userStates.delete(userId);
+            break;
+    }
+}
+
+// Обработка пропуска шага в создании приглашения
+async function handleInvitationSkip(msg, userId, userState) {
+    const step = userState.step;
+    const data = userState.data || {};
+    
+    switch (step) {
+        case 'photos':
+            // Пропускаем фото и завершаем создание приглашения
+            await completeCreateInvitation(msg, userId, data);
+            break;
+            
+        default:
+            bot.sendMessage(msg.chat.id, '❌ Неизвестный шаг создания приглашения');
+            userStates.delete(userId);
             break;
     }
 }
@@ -2904,6 +3108,14 @@ async function initBot() {
         } catch (error) {
             console.error('❌ Ошибка проверки статуса бота в группе:', error.message);
         }
+        
+        // Запуск веб API
+        const apiApp = createAPI();
+        const PORT = 3001;
+        apiApp.listen(PORT, () => {
+            console.log(`🌐 Веб API запущен на http://localhost:${PORT}`);
+            console.log(`📊 Дашборд доступен: http://localhost:${PORT}`);
+        });
         
     } catch (error) {
         console.error('❌ Ошибка инициализации бота:', error);

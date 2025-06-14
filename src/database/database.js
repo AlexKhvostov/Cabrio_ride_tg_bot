@@ -334,16 +334,18 @@ class Database {
 
     // Статистика
     async getStats() {
+        const defaultStats = {
+            totalMembers: 0,
+            activeMembers: 0,
+            totalCars: 0,
+            totalInvitations: 0,
+            successfulInvitations: 0,
+            leftMembers: 0,
+            leftCars: 0
+        };
+
         if (!this.checkConnection()) {
-            return {
-                totalMembers: 0,
-                activeMembers: 0,
-                totalCars: 0,
-                totalInvitations: 0,
-                successfulInvitations: 0,
-                leftMembers: 0,
-                leftCars: 0
-            };
+            return defaultStats;
         }
         
         try {
@@ -372,15 +374,22 @@ class Database {
             };
         } catch (error) {
             console.error('Ошибка получения статистики:', error);
-            return {
-                totalMembers: 0,
-                activeMembers: 0,
-                totalCars: 0,
-                totalInvitations: 0,
-                successfulInvitations: 0,
-                leftMembers: 0,
-                leftCars: 0
-            };
+            
+            // Если ошибка связана с подключением, пытаемся переподключиться
+            if (error.code === 'ECONNRESET' || error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ENOTFOUND') {
+                console.log('🔄 Попытка переподключения к базе данных...');
+                try {
+                    await this.init();
+                    if (this.isConnected) {
+                        console.log('✅ Переподключение успешно, повторяем запрос статистики');
+                        return await this.getStats(); // Рекурсивный вызов после переподключения
+                    }
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError);
+                }
+            }
+            
+            return defaultStats;
         }
     }
 
@@ -440,6 +449,202 @@ class Database {
             } catch (error) {
                 console.error('❌ Ошибка закрытия соединения:', error.message);
             }
+        }
+    }
+
+    // Функции для API
+    async getAllMembers() {
+        console.log('🔍 getAllMembers: isConnected =', this.isConnected);
+        
+        if (!this.checkConnection()) {
+            console.log('⚠️ getAllMembers: checkConnection вернул false');
+            return [];
+        }
+        
+        try {
+            console.log('🔍 getAllMembers: выполняем запрос к БД');
+            const [rows] = await this.connection.execute(`
+                SELECT m.*, 
+                       c.id as car_id, c.brand, c.model, c.reg_number, c.photos as car_photos
+                FROM members m 
+                LEFT JOIN cars c ON m.id = c.member_id 
+                ORDER BY m.join_date DESC, c.created_at DESC
+            `);
+            console.log('✅ getAllMembers: получено записей:', rows.length);
+            
+            // Группируем автомобили по участникам
+            const membersMap = new Map();
+            
+            rows.forEach(row => {
+                const memberId = row.id;
+                
+                if (!membersMap.has(memberId)) {
+                    membersMap.set(memberId, {
+                        id: row.id,
+                        telegram_id: row.telegram_id,
+                        first_name: row.first_name,
+                        last_name: row.last_name,
+                        nickname: row.nickname,
+                        city: row.city,
+                        photo_url: row.photo_url,
+                        status: row.status,
+                        join_date: row.join_date,
+                        left_date: row.left_date,
+                        cars: []
+                    });
+                }
+                
+                // Добавляем автомобиль если он есть
+                if (row.car_id) {
+                    membersMap.get(memberId).cars.push({
+                        id: row.car_id,
+                        brand: row.brand,
+                        model: row.model,
+                        reg_number: row.reg_number,
+                        photos: row.car_photos
+                    });
+                }
+            });
+            
+            return Array.from(membersMap.values());
+        } catch (error) {
+            console.error('Ошибка получения всех участников:', error);
+            
+            // Если ошибка связана с подключением, пытаемся переподключиться
+            if (error.code === 'ECONNRESET' || error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ENOTFOUND') {
+                console.log('🔄 Попытка переподключения к базе данных...');
+                try {
+                    await this.init();
+                    if (this.isConnected) {
+                        console.log('✅ Переподключение успешно, повторяем запрос участников');
+                        const [rows] = await this.connection.execute(`
+                            SELECT m.*, 
+                                   c.id as car_id, c.brand, c.model, c.reg_number, c.photos as car_photos
+                            FROM members m 
+                            LEFT JOIN cars c ON m.id = c.member_id 
+                            ORDER BY m.join_date DESC, c.created_at DESC
+                        `);
+                        
+                        // Группируем автомобили по участникам
+                        const membersMap = new Map();
+                        
+                        rows.forEach(row => {
+                            const memberId = row.id;
+                            
+                            if (!membersMap.has(memberId)) {
+                                membersMap.set(memberId, {
+                                    id: row.id,
+                                    telegram_id: row.telegram_id,
+                                    first_name: row.first_name,
+                                    last_name: row.last_name,
+                                    nickname: row.nickname,
+                                    city: row.city,
+                                    photo_url: row.photo_url,
+                                    status: row.status,
+                                    join_date: row.join_date,
+                                    left_date: row.left_date,
+                                    cars: []
+                                });
+                            }
+                            
+                            // Добавляем автомобиль если он есть
+                            if (row.car_id) {
+                                membersMap.get(memberId).cars.push({
+                                    id: row.car_id,
+                                    brand: row.brand,
+                                    model: row.model,
+                                    reg_number: row.reg_number,
+                                    photos: row.car_photos
+                                });
+                            }
+                        });
+                        
+                        return Array.from(membersMap.values());
+                    }
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError);
+                }
+            }
+            
+            return [];
+        }
+    }
+
+    async getAllCars() {
+        if (!this.checkConnection()) return [];
+        
+        try {
+            const [rows] = await this.connection.execute(`
+                SELECT c.*, m.first_name, m.last_name, m.nickname, m.photo_url 
+                FROM cars c 
+                LEFT JOIN members m ON c.member_id = m.id 
+                ORDER BY c.created_at DESC
+            `);
+            return rows;
+        } catch (error) {
+            console.error('Ошибка получения всех автомобилей:', error);
+            
+            // Если ошибка связана с подключением, пытаемся переподключиться
+            if (error.code === 'ECONNRESET' || error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ENOTFOUND') {
+                console.log('🔄 Попытка переподключения к базе данных...');
+                try {
+                    await this.init();
+                    if (this.isConnected) {
+                        console.log('✅ Переподключение успешно, повторяем запрос автомобилей');
+                        const [rows] = await this.connection.execute(`
+                            SELECT c.*, m.first_name, m.last_name, m.nickname, m.photo_url 
+                            FROM cars c 
+                            LEFT JOIN members m ON c.member_id = m.id 
+                            ORDER BY c.created_at DESC
+                        `);
+                        return rows;
+                    }
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError);
+                }
+            }
+            
+            return [];
+        }
+    }
+
+    async getAllInvitations() {
+        if (!this.checkConnection()) return [];
+        
+        try {
+            const [rows] = await this.connection.execute(`
+                SELECT i.*, c.brand, c.model, c.reg_number, m.first_name, m.last_name 
+                FROM invitations i 
+                LEFT JOIN cars c ON i.car_id = c.id 
+                LEFT JOIN members m ON i.inviter_member_id = m.id 
+                ORDER BY i.invitation_date DESC
+            `);
+            return rows;
+        } catch (error) {
+            console.error('Ошибка получения всех приглашений:', error);
+            
+            // Если ошибка связана с подключением, пытаемся переподключиться
+            if (error.code === 'ECONNRESET' || error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ENOTFOUND') {
+                console.log('🔄 Попытка переподключения к базе данных...');
+                try {
+                    await this.init();
+                    if (this.isConnected) {
+                        console.log('✅ Переподключение успешно, повторяем запрос приглашений');
+                        const [rows] = await this.connection.execute(`
+                            SELECT i.*, c.brand, c.model, c.reg_number, m.first_name, m.last_name 
+                            FROM invitations i 
+                            LEFT JOIN cars c ON i.car_id = c.id 
+                            LEFT JOIN members m ON i.inviter_member_id = m.id 
+                            ORDER BY i.invitation_date DESC
+                        `);
+                        return rows;
+                    }
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError);
+                }
+            }
+            
+            return [];
         }
     }
 }

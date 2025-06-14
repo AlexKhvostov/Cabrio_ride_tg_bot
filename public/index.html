@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabrio Club Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            min-height: 100vh;
+            line-height: 1.2;
+            font-size: 13px;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0;
+        }
+        
+        /* Заголовок */
+        .header {
+            background: #000000;
+            border-bottom: 2px solid #333333;
+            padding: 15px 10px;
+            text-align: center;
+            margin-bottom: 0;
+        }
+        
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 300;
+            margin-bottom: 5px;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .header p {
+            color: #888888;
+            font-size: 0.7rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Статистика */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0;
+            margin-bottom: 0;
+            background: #000000;
+            border-bottom: 1px solid #333333;
+        }
+        
+        .stat-card {
+            background: #000000;
+            border-right: 1px solid #333333;
+            padding: 10px 5px;
+            text-align: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .stat-card:last-child {
+            border-right: none;
+        }
+        
+        .stat-card:hover {
+            background: #111111;
+        }
+        
+        .stat-number {
+            font-size: 1.8rem;
+            font-weight: 100;
+            margin-bottom: 3px;
+            color: #ffffff;
+        }
+        
+        .stat-label {
+            color: #888888;
+            font-size: 0.6rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* Вкладки */
+        .tabs {
+            display: flex;
+            background: #222222;
+            border-bottom: 1px solid #333333;
+            margin-bottom: 0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px 8px;
+            background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+            border: 1px solid #444444;
+            border-right: 1px solid #333333;
+            color: #cccccc;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .tab::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .tab:last-child {
+            border-right: 1px solid #444444;
+        }
+        
+        .tab.active {
+            background: linear-gradient(135deg, #4a4a4a, #3a3a3a);
+            color: #ffffff;
+            border-color: #555555;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 1px 2px rgba(255,255,255,0.1);
+        }
+        
+        .tab:hover:not(.active) {
+            background: linear-gradient(135deg, #3a3a3a, #2a2a2a);
+            color: #ffffff;
+            border-color: #555555;
+            transform: translateY(-1px);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .tab:hover::before {
+            left: 100%;
+        }
+        
+        .tab:active {
+            transform: translateY(0);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+        }
+        
+        /* Контент */
+        .content {
+            background: #1a1a1a;
+            padding: 15px 8px;
+            min-height: 400px;
+        }
+        
+        .content h2 {
+            font-size: 1rem;
+            font-weight: 300;
+            margin-bottom: 15px;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #333333;
+            padding-bottom: 8px;
+        }
+        
+        /* Фильтры */
+        .filters {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            align-items: flex-end;
+            padding: 8px;
+            background: #222222;
+            border: 1px solid #333333;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .filter-label {
+            color: #888888;
+            font-size: 0.6rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .filter-input {
+            padding: 6px 8px;
+            border: 1px solid #333333;
+            background: #000000;
+            color: #ffffff;
+            font-size: 0.7rem;
+            min-width: 100px;
+            width: 100px;
+            transition: border-color 0.2s ease;
+            font-family: inherit;
+        }
+        
+        .filter-input:focus {
+            outline: none;
+            border-color: #666666;
+            background: #111111;
+        }
+        
+        .clear-filters {
+            padding: 6px;
+            background: #333333;
+            color: #ffffff;
+            border: 1px solid #555555;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        
+        .clear-filters:hover {
+            background: #444444;
+            border-color: #666666;
+            transform: scale(1.1);
+        }
+        
+        /* ТАБЛИЦЫ */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #222222;
+            border: 1px solid #333333;
+            margin-top: 10px;
+        }
+        
+        .data-table th {
+            background: #000000;
+            color: #ffffff;
+            padding: 12px 8px;
+            text-align: left;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #333333;
+            border-right: 1px solid #333333;
+        }
+        
+        .data-table th:last-child {
+            border-right: none;
+        }
+        
+        .data-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #333333;
+            border-right: 1px solid #333333;
+            font-size: 0.7rem;
+            vertical-align: middle;
+        }
+        
+        .data-table td:last-child {
+            border-right: none;
+        }
+        
+        .data-table tr:hover {
+            background: #2a2a2a;
+        }
+        
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* Аватары в таблице */
+        .table-avatar {
+            width: 40px;
+            height: 40px;
+            background: #333333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.7rem;
+            border: 1px solid #555555;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        
+        .table-avatar:hover {
+            background: #444444;
+            border-color: #666666;
+        }
+        
+        .table-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        /* Колонка участника */
+        .member-column {
+            min-width: 140px;
+            text-align: center;
+        }
+        
+        /* Статусы в таблице */
+        .table-status {
+            padding: 4px 8px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid;
+            display: inline-block;
+            min-width: 60px;
+        }
+        
+        .table-status.активный {
+            background: #1a4d1a;
+            color: #66ff66;
+            border-color: #2d7d2d;
+        }
+        
+        .table-status.новый {
+            background: #1a1a4d;
+            color: #6666ff;
+            border-color: #2d2d7d;
+        }
+        
+        .table-status.вышел {
+            background: #4d1a1a;
+            color: #ff6666;
+            border-color: #7d2d2d;
+        }
+        
+        .table-status.продан {
+            background: #4d4d1a;
+            color: #ffff66;
+            border-color: #7d7d2d;
+        }
+        
+        .table-status.приглашение {
+            background: #4d1a4d;
+            color: #ff66ff;
+            border-color: #7d2d7d;
+        }
+        
+        /* Специальные стили для колонки с автомобилями */
+        .cars-column {
+            max-width: 90px;
+            min-width: 80px;
+        }
+        
+        .owner-column {
+            max-width: 150px;
+            min-width: 120px;
+        }
+        
+        /* Загрузка */
+        .loading {
+            text-align: center;
+            padding: 40px 10px;
+            color: #888888;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border: 2px solid #333333;
+            border-top-color: #ffffff;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Ошибка */
+        .error-message {
+            background: #2a1a1a;
+            border: 1px solid #ff4444;
+            color: #ff8888;
+            padding: 15px 10px;
+            text-align: center;
+            margin: 10px 0;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.7rem;
+        }
+        
+        /* Модальное окно */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.95);
+        }
+        
+        .modal-content {
+            margin: auto;
+            display: block;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80%;
+            object-fit: contain;
+            margin-top: 5%;
+            border: 1px solid #333333;
+        }
+        
+        .modal-title {
+            color: #ffffff;
+            text-align: center;
+            padding: 10px;
+            font-size: 0.8rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: #000000;
+            border-bottom: 1px solid #333333;
+        }
+        
+        .close {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            color: #ffffff;
+            font-size: 25px;
+            font-weight: 300;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        
+        .close:hover {
+            color: #888888;
+        }
+        
+        /* Скрытие контента */
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            body {
+                font-size: 12px;
+            }
+            
+            .header {
+                padding: 10px 5px;
+            }
+            
+            .header h1 {
+                font-size: 1.1rem;
+                letter-spacing: 0.5px;
+            }
+            
+            .header p {
+                font-size: 0.6rem;
+            }
+            
+            .stat-card {
+                padding: 8px 2px;
+            }
+            
+            .stat-number {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.55rem;
+            }
+            
+            .content {
+                padding: 10px 5px;
+            }
+            
+            .content h2 {
+                font-size: 0.9rem;
+                margin-bottom: 10px;
+                padding-bottom: 5px;
+            }
+            
+            .filters {
+                flex-wrap: wrap;
+                gap: 5px;
+                padding: 8px 5px;
+            }
+            
+            .filter-input {
+                min-width: 80px;
+                width: 80px;
+                font-size: 0.65rem;
+                padding: 5px 6px;
+            }
+            
+            .filter-label {
+                font-size: 0.55rem;
+            }
+            
+            .clear-filters {
+                font-size: 0.7rem;
+                padding: 4px;
+                width: 28px;
+                height: 28px;
+            }
+            
+            .data-table {
+                font-size: 0.6rem;
+            }
+            
+            .data-table th,
+            .data-table td {
+                padding: 8px 4px;
+            }
+            
+            .table-avatar {
+                width: 32px;
+                height: 32px;
+                font-size: 0.6rem;
+            }
+            
+            .member-column {
+                min-width: 120px;
+            }
+            
+            .table-status {
+                font-size: 0.5rem;
+                padding: 3px 6px;
+                min-width: 50px;
+            }
+            
+            .cars-column {
+                max-width: 70px;
+                min-width: 60px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                font-size: 11px;
+            }
+            
+            .header h1 {
+                font-size: 1rem;
+            }
+            
+            .header p {
+                font-size: 0.55rem;
+            }
+            
+            .stat-card {
+                padding: 6px 1px;
+            }
+            
+            .stat-number {
+                font-size: 1.2rem;
+            }
+            
+            .stat-label {
+                font-size: 0.4rem;
+            }
+            
+
+            
+            .tab {
+                padding: 8px 5px;
+                font-size: 0.65rem;
+            }
+            
+            .content {
+                padding: 8px 3px;
+            }
+            
+            .content h2 {
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+            }
+            
+            .filters {
+                padding: 5px 3px;
+                gap: 3px;
+            }
+            
+            .filter-input {
+                font-size: 0.6rem;
+                padding: 4px 5px;
+                min-width: 70px;
+                width: 70px;
+            }
+            
+            .filter-label {
+                font-size: 0.5rem;
+            }
+            
+            .clear-filters {
+                font-size: 0.6rem;
+                padding: 3px;
+                width: 24px;
+                height: 24px;
+            }
+            
+            .data-table {
+                font-size: 0.55rem;
+            }
+            
+            .data-table th,
+            .data-table td {
+                padding: 6px 3px;
+            }
+            
+            .table-avatar {
+                width: 25px;
+                height: 25px;
+                font-size: 0.55rem;
+            }
+            
+            .member-column {
+                min-width: 100px;
+            }
+            
+            .table-status {
+                font-size: 0.45rem;
+                padding: 2px 4px;
+                min-width: 40px;
+            }
+            
+            .cars-column {
+                max-width: 60px;
+                min-width: 55px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Заголовок -->
+        <div class="header">
+            <h1>Cabrio Club Dashboard</h1>
+            <p>Система управления клубом кабриолетов</p>
+        </div>
+        
+        <!-- Статистика -->
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalMembers">-</div>
+                <div class="stat-label">Участников</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalCars">-</div>
+                <div class="stat-label">Автомобилей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalInvitations">-</div>
+                <div class="stat-label">Приглашений</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="successfulInvitations">-</div>
+                <div class="stat-label">Вступили</div>
+            </div>
+        </div>
+        
+        <!-- Вкладки -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('members')">Участники</button>
+            <button class="tab" onclick="showTab('cars')">Автомобили</button>
+            <button class="tab" onclick="showTab('invitations')">Приглашения</button>
+        </div>
+        
+        <!-- Контент -->
+        <div class="content">
+            <!-- Участники -->
+            <div id="members" class="tab-content active">
+                <h2>Участники клуба</h2>
+                <div class="loading">Загрузка данных</div>
+            </div>
+            
+            <!-- Автомобили -->
+            <div id="cars" class="tab-content">
+                <h2>Автомобили</h2>
+                <div class="loading">Загрузка данных</div>
+            </div>
+            
+            <!-- Приглашения -->
+            <div id="invitations" class="tab-content">
+                <h2>Приглашения</h2>
+                <div class="loading">Загрузка данных</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для изображений -->
+    <div id="imageModal" class="modal" onclick="closeImageModal()">
+        <span class="close" onclick="closeImageModal()">&times;</span>
+        <div class="modal-title" id="modalTitle"></div>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <script>
+        // Глобальные переменные
+        let allMembers = [];
+        let allCars = [];
+        let allInvitations = [];
+        
+        // Функция для создания аватара пользователя с именем и никнеймом
+        function createUserAvatar(firstName, lastName, photoPath = null, nickname = null) {
+            const avatarImg = photoPath 
+                ? `<img src="/uploads/members/${photoPath}" alt="${firstName}" onclick="openImageModal('/uploads/members/${photoPath}', '${firstName}')">`
+                : `<div style="width: 100%; height: 100%; background: linear-gradient(135deg, #333333, #555555); display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 600; font-size: 0.8rem;">${firstName.charAt(0)}${lastName ? lastName.charAt(0) : ''}</div>`;
+            
+            return `
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px;">
+                    <div class="table-avatar" style="width: 42px; height: 42px; flex-shrink: 0;">
+                        ${avatarImg}
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; color: #ffffff; font-size: 0.7rem; line-height: 1.2; margin-bottom: 2px;">${firstName} ${lastName || ''}</div>
+                        <div style="color: #888888; font-size: 0.6rem; line-height: 1.2;">${nickname || '-'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Функция для создания изображения автомобиля
+        function createCarImage(brand, photos = null) {
+            if (photos) {
+                try {
+                    const photoArray = JSON.parse(photos);
+                    if (photoArray && photoArray.length > 0) {
+                        const firstPhoto = photoArray[0];
+                        return `<div class="table-avatar"><img src="/uploads/cars/${firstPhoto}" alt="${brand}" onclick="openImageModal('/uploads/cars/${firstPhoto}', '${brand}')"></div>`;
+                    }
+                } catch (e) {
+                    console.log('Ошибка парсинга фото автомобиля:', e);
+                }
+            }
+            
+            return `<div class="table-avatar"></div>`;
+        }
+        
+        // Функция для создания маленького аватара пользователя
+        function createSmallUserAvatar(firstName, lastName, photoPath = null) {
+            if (photoPath) {
+                return `<img src="/uploads/members/${photoPath}" alt="${firstName}" style="width: 30px; height: 30px; object-fit: cover;" onclick="openImageModal('/uploads/members/${photoPath}', '${firstName}')">`;
+            }
+            
+            return '';
+        }
+        
+        // Функция для создания маленькой иконки автомобиля
+        function createSmallCarIcon(brand, photos = null) {
+            if (photos) {
+                try {
+                    const photoArray = JSON.parse(photos);
+                    if (photoArray && photoArray.length > 0) {
+                        const firstPhoto = photoArray[0];
+                        return `<img src="/uploads/cars/${firstPhoto}" alt="${brand}" style="width: 30px; height: 30px; object-fit: cover;" onclick="openImageModal('/uploads/cars/${firstPhoto}', '${brand}')">`;
+                    }
+                } catch (e) {
+                    console.log('Ошибка парсинга фото автомобиля:', e);
+                }
+            }
+            
+            return '';
+        }
+        
+        // Функция для создания информации об автомобилях участника
+        function createMemberCarsInfo(cars) {
+            if (!cars || cars.length === 0) {
+                return '<span style="color: #888888; font-size: 0.6rem;">НЕТ АВТО</span>';
+            }
+            
+            return `
+                <div style="display: flex; flex-direction: column; gap: 6px; min-height: 30px;">
+                    ${cars.map(car => {
+                        return `
+                            <div style="display: flex; padding: 4px 0; border-bottom: 1px solid #333333;">
+                                <div style="width: 35px; height: 35px; background: #333333; border: 1px solid #555555; display: flex; align-items: center; justify-content: center; margin-right: 8px; flex-shrink: 0; overflow: hidden;">
+                                    ${createSmallCarIcon(car.brand, car.photos)}
+                                </div>
+                                <div style="background: #2a2a2a; border: 1px solid #444444; padding: 4px 6px; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
+                                    <div style="font-weight: 600; color: #ffffff; font-size: 0.6rem; line-height: 1.1; margin-bottom: 2px;">${car.brand} ${car.model}</div>
+                                    <div style="color: #888888; font-size: 0.55rem; line-height: 1.1;">${car.reg_number || 'Без номера'}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        // Функция для создания информации о владельце автомобиля
+        function createCarOwnerInfo(car) {
+            if (!car.first_name) {
+                return '<span style="color: #888888; font-size: 0.6rem;">НЕТ ВЛАДЕЛЬЦА</span>';
+            }
+            
+            return `
+                <div style="display: flex; padding: 4px 0;">
+                    <div style="width: 35px; height: 35px; background: #333333; border: 1px solid #555555; display: flex; align-items: center; justify-content: center; margin-right: 8px; flex-shrink: 0; overflow: hidden;">
+                        ${createSmallUserAvatar(car.first_name, car.last_name, car.photo_url)}
+                    </div>
+                    <div style="background: #2a2a2a; border: 1px solid #444444; padding: 4px 6px; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="font-weight: 600; color: #ffffff; font-size: 0.6rem; line-height: 1.1; margin-bottom: 2px;">${car.first_name} ${car.last_name || ''}</div>
+                        <div style="color: #888888; font-size: 0.55rem; line-height: 1.1;">${car.nickname || 'Без никнейма'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Модальное окно
+        function openImageModal(imageSrc, title) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            const modalTitle = document.getElementById('modalTitle');
+            
+            modal.style.display = 'block';
+            modalImg.src = imageSrc;
+            modalTitle.textContent = title;
+        }
+        
+        function closeImageModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
+        
+        // Переключение вкладок
+        function showTab(tabName) {
+            // Скрыть все вкладки
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Показать выбранную вкладку
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // Загрузка статистики
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                
+                document.getElementById('totalMembers').textContent = stats.totalMembers;
+                document.getElementById('totalCars').textContent = stats.totalCars;
+                document.getElementById('totalInvitations').textContent = stats.totalInvitations;
+                document.getElementById('successfulInvitations').textContent = stats.successfulInvitations;
+            } catch (error) {
+                console.error('Ошибка загрузки статистики:', error);
+            }
+        }
+        
+        // Загрузка участников
+        async function loadMembers() {
+            try {
+                const response = await fetch('/api/members');
+                const members = await response.json();
+                allMembers = members;
+                
+                renderMembers(members);
+            } catch (error) {
+                console.error('Ошибка загрузки участников:', error);
+                document.getElementById('members').innerHTML = '<h2>Участники клуба</h2><div class="error-message">Ошибка загрузки данных</div>';
+            }
+        }
+        
+        // Отображение участников
+        function renderMembers(members) {
+            const html = `
+                <h2>Участники клуба</h2>
+                <div class="filters">
+                    <div class="filter-group">
+                        <label class="filter-label">Поиск по имени</label>
+                        <input type="text" class="filter-input" id="memberNameFilter" placeholder="Имя или никнейм..." onkeyup="filterMembers()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Город</label>
+                        <input type="text" class="filter-input" id="memberCityFilter" placeholder="Город..." onkeyup="filterMembers()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Статус</label>
+                        <select class="filter-input" id="memberStatusFilter" onchange="filterMembers()">
+                            <option value="">Все</option>
+                            <option value="активный">Активный</option>
+                            <option value="новый">Новый</option>
+                            <option value="вышел">Вышел</option>
+                            <option value="без авто">Без авто</option>
+                        </select>
+                    </div>
+                    <button class="clear-filters" onclick="clearMemberFilters()" title="Очистить фильтры">🗑️</button>
+                </div>
+                <table class="data-table" id="membersTable">
+                    <thead>
+                        <tr>
+                            <th class="member-column">Участник</th>
+                            <th>Город</th>
+                            <th>Автомобили</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${members.map(member => `
+                            <tr>
+                                <td class="member-column">${createUserAvatar(member.first_name, member.last_name, member.photo_url, member.nickname)}</td>
+                                <td>${member.city || '-'}</td>
+                                <td class="cars-column">${createMemberCarsInfo(member.cars)}</td>
+                                <td><span class="table-status ${member.status}">${member.status}</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('members').innerHTML = html;
+        }
+        
+        // Загрузка автомобилей
+        async function loadCars() {
+            try {
+                const response = await fetch('/api/cars');
+                const cars = await response.json();
+                allCars = cars;
+                
+                renderCars(cars);
+            } catch (error) {
+                console.error('Ошибка загрузки автомобилей:', error);
+                document.getElementById('cars').innerHTML = '<h2>Автомобили</h2><div class="error-message">Ошибка загрузки данных</div>';
+            }
+        }
+        
+        // Отображение автомобилей
+        function renderCars(cars) {
+            const html = `
+                <h2>Автомобили</h2>
+                <div class="filters">
+                    <div class="filter-group">
+                        <label class="filter-label">Марка/Модель</label>
+                        <input type="text" class="filter-input" id="carBrandFilter" placeholder="BMW, Mercedes..." onkeyup="filterCars()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Номер</label>
+                        <input type="text" class="filter-input" id="carNumberFilter" placeholder="А123БВ..." onkeyup="filterCars()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Владелец</label>
+                        <input type="text" class="filter-input" id="carOwnerFilter" placeholder="Имя..." onkeyup="filterCars()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Год</label>
+                        <input type="number" class="filter-input" id="carYearFilter" placeholder="2020" onkeyup="filterCars()">
+                    </div>
+                    <button class="clear-filters" onclick="clearCarFilters()" title="Очистить фильтры">🗑️</button>
+                </div>
+                <table class="data-table" id="carsTable">
+                    <thead>
+                        <tr>
+                            <th>Фото</th>
+                            <th>Марка</th>
+                            <th>Модель</th>
+                            <th>Владелец</th>
+                            <th>Год</th>
+                            <th>Номер</th>
+                            <th>Цвет</th>
+                            <th>Объем</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${cars.map(car => `
+                            <tr>
+                                <td>${createCarImage(car.brand, car.photos)}</td>
+                                <td>${car.brand}</td>
+                                <td>${car.model}</td>
+                                <td class="owner-column">${createCarOwnerInfo(car)}</td>
+                                <td>${car.year}</td>
+                                <td>${car.reg_number || '-'}</td>
+                                <td>${car.color || '-'}</td>
+                                <td>${car.engine_volume ? car.engine_volume + 'л' : '-'}</td>
+                                <td><span class="table-status ${car.status}">${car.status}</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('cars').innerHTML = html;
+        }
+        
+        // Загрузка приглашений
+        async function loadInvitations() {
+            try {
+                const response = await fetch('/api/invitations');
+                const invitations = await response.json();
+                allInvitations = invitations;
+                
+                renderInvitations(invitations);
+            } catch (error) {
+                console.error('Ошибка загрузки приглашений:', error);
+                document.getElementById('invitations').innerHTML = '<h2>Приглашения</h2><div class="error-message">Ошибка загрузки данных</div>';
+            }
+        }
+        
+        // Отображение приглашений
+        function renderInvitations(invitations) {
+            const html = `
+                <h2>Приглашения</h2>
+                <div class="filters">
+                    <div class="filter-group">
+                        <label class="filter-label">Номер</label>
+                        <input type="text" class="filter-input" id="invitationNumberFilter" placeholder="А123БВ..." onkeyup="filterInvitations()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">От кого</label>
+                        <input type="text" class="filter-input" id="invitationFromFilter" placeholder="Имя..." onkeyup="filterInvitations()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Марка</label>
+                        <input type="text" class="filter-input" id="invitationBrandFilter" placeholder="BMW..." onkeyup="filterInvitations()">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Статус</label>
+                        <select class="filter-input" id="invitationStatusFilter" onchange="filterInvitations()">
+                            <option value="">Все</option>
+                            <option value="приглашение">Приглашение</option>
+                            <option value="вступил">Вступил</option>
+                            <option value="отклонено">Отклонено</option>
+                        </select>
+                    </div>
+                    <button class="clear-filters" onclick="clearInvitationFilters()" title="Очистить фильтры">🗑️</button>
+                </div>
+                <table class="data-table" id="invitationsTable">
+                    <thead>
+                        <tr>
+                            <th>Фото</th>
+                            <th>От кого</th>
+                            <th>Автомобиль</th>
+                            <th>Номер</th>
+                            <th>Дата</th>
+                            <th>Место</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${invitations.map(invitation => `
+                            <tr>
+                                <td>${createCarImage(invitation.brand || 'CAR')}</td>
+                                <td>${invitation.first_name || 'Неизвестен'} ${invitation.last_name || ''}</td>
+                                <td>${invitation.brand || '-'} ${invitation.model || ''}</td>
+                                <td>${invitation.reg_number || '-'}</td>
+                                <td>${new Date(invitation.invitation_date).toLocaleDateString('ru-RU')}</td>
+                                <td>${invitation.location || '-'}</td>
+                                <td><span class="table-status ${invitation.status}">${invitation.status}</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('invitations').innerHTML = html;
+        }
+        
+        // Фильтрация участников
+        function filterMembers() {
+            const nameFilter = document.getElementById('memberNameFilter').value.toLowerCase();
+            const cityFilter = document.getElementById('memberCityFilter').value.toLowerCase();
+            const statusFilter = document.getElementById('memberStatusFilter').value;
+            
+            const filteredMembers = allMembers.filter(member => {
+                const fullName = `${member.first_name} ${member.last_name || ''}`.toLowerCase();
+                const nickname = (member.nickname || '').toLowerCase();
+                const city = (member.city || '').toLowerCase();
+                
+                const nameMatch = fullName.includes(nameFilter) || nickname.includes(nameFilter);
+                const cityMatch = city.includes(cityFilter);
+                const statusMatch = !statusFilter || member.status === statusFilter;
+                
+                return nameMatch && cityMatch && statusMatch;
+            });
+            
+            updateMembersTable(filteredMembers);
+        }
+        
+        // Обновление таблицы участников
+        function updateMembersTable(members) {
+            const tbody = document.querySelector('#membersTable tbody');
+            tbody.innerHTML = members.map(member => `
+                <tr>
+                    <td class="member-column">${createUserAvatar(member.first_name, member.last_name, member.photo_url, member.nickname)}</td>
+                    <td>${member.city || '-'}</td>
+                    <td class="cars-column">${createMemberCarsInfo(member.cars)}</td>
+                    <td><span class="table-status ${member.status}">${member.status}</span></td>
+                </tr>
+            `).join('');
+        }
+        
+        // Очистка фильтров участников
+        function clearMemberFilters() {
+            document.getElementById('memberNameFilter').value = '';
+            document.getElementById('memberCityFilter').value = '';
+            document.getElementById('memberStatusFilter').value = '';
+            updateMembersTable(allMembers);
+        }
+        
+        // Фильтрация автомобилей
+        function filterCars() {
+            const brandFilter = document.getElementById('carBrandFilter').value.toLowerCase();
+            const numberFilter = document.getElementById('carNumberFilter').value.toLowerCase();
+            const ownerFilter = document.getElementById('carOwnerFilter').value.toLowerCase();
+            const yearFilter = document.getElementById('carYearFilter').value;
+            
+            const filteredCars = allCars.filter(car => {
+                const brand = `${car.brand} ${car.model}`.toLowerCase();
+                const number = (car.reg_number || '').toLowerCase();
+                const owner = `${car.first_name || ''} ${car.last_name || ''}`.toLowerCase();
+                const year = car.year.toString();
+                
+                const brandMatch = brand.includes(brandFilter);
+                const numberMatch = number.includes(numberFilter);
+                const ownerMatch = owner.includes(ownerFilter);
+                const yearMatch = !yearFilter || year.includes(yearFilter);
+                
+                return brandMatch && numberMatch && ownerMatch && yearMatch;
+            });
+            
+            updateCarsTable(filteredCars);
+        }
+        
+        // Обновление таблицы автомобилей
+        function updateCarsTable(cars) {
+            const tbody = document.querySelector('#carsTable tbody');
+            tbody.innerHTML = cars.map(car => `
+                <tr>
+                    <td>${createCarImage(car.brand, car.photos)}</td>
+                    <td>${car.brand}</td>
+                    <td>${car.model}</td>
+                    <td class="owner-column">${createCarOwnerInfo(car)}</td>
+                    <td>${car.year}</td>
+                    <td>${car.reg_number || '-'}</td>
+                    <td>${car.color || '-'}</td>
+                    <td>${car.engine_volume ? car.engine_volume + 'л' : '-'}</td>
+                    <td><span class="table-status ${car.status}">${car.status}</span></td>
+                </tr>
+            `).join('');
+        }
+        
+        // Очистка фильтров автомобилей
+        function clearCarFilters() {
+            document.getElementById('carBrandFilter').value = '';
+            document.getElementById('carNumberFilter').value = '';
+            document.getElementById('carOwnerFilter').value = '';
+            document.getElementById('carYearFilter').value = '';
+            updateCarsTable(allCars);
+        }
+        
+        // Фильтрация приглашений
+        function filterInvitations() {
+            const numberFilter = document.getElementById('invitationNumberFilter').value.toLowerCase();
+            const fromFilter = document.getElementById('invitationFromFilter').value.toLowerCase();
+            const brandFilter = document.getElementById('invitationBrandFilter').value.toLowerCase();
+            const statusFilter = document.getElementById('invitationStatusFilter').value;
+            
+            const filteredInvitations = allInvitations.filter(invitation => {
+                const number = (invitation.reg_number || '').toLowerCase();
+                const from = `${invitation.first_name || ''} ${invitation.last_name || ''}`.toLowerCase();
+                const brand = `${invitation.brand || ''} ${invitation.model || ''}`.toLowerCase();
+                
+                const numberMatch = number.includes(numberFilter);
+                const fromMatch = from.includes(fromFilter);
+                const brandMatch = brand.includes(brandFilter);
+                const statusMatch = !statusFilter || invitation.status === statusFilter;
+                
+                return numberMatch && fromMatch && brandMatch && statusMatch;
+            });
+            
+            updateInvitationsTable(filteredInvitations);
+        }
+        
+        // Обновление таблицы приглашений
+        function updateInvitationsTable(invitations) {
+            const tbody = document.querySelector('#invitationsTable tbody');
+            tbody.innerHTML = invitations.map(invitation => `
+                <tr>
+                    <td>${createCarImage(invitation.brand || 'CAR')}</td>
+                    <td>${invitation.first_name || 'Неизвестен'} ${invitation.last_name || ''}</td>
+                    <td>${invitation.brand || '-'} ${invitation.model || ''}</td>
+                    <td>${invitation.reg_number || '-'}</td>
+                    <td>${new Date(invitation.invitation_date).toLocaleDateString('ru-RU')}</td>
+                    <td>${invitation.location || '-'}</td>
+                    <td><span class="table-status ${invitation.status}">${invitation.status}</span></td>
+                </tr>
+            `).join('');
+        }
+        
+        // Очистка фильтров приглашений
+        function clearInvitationFilters() {
+            document.getElementById('invitationNumberFilter').value = '';
+            document.getElementById('invitationFromFilter').value = '';
+            document.getElementById('invitationBrandFilter').value = '';
+            document.getElementById('invitationStatusFilter').value = '';
+            updateInvitationsTable(allInvitations);
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadMembers();
+            loadCars();
+            loadInvitations();
+        });
+    </script>
+</body>
+</html> 
