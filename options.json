@@ -1,0 +1,30 @@
+{
+  "notifications": {
+    "new_member": {
+      "enabled": 1,
+      "description": "Уведомления о новых участниках клуба"
+    },
+    "new_invitation": {
+      "enabled": 1,
+      "description": "Уведомления о новых приглашениях"
+    },
+    "new_car": {
+      "enabled": 1,
+      "description": "Уведомления о добавлении новых автомобилей"
+    },
+    "member_left": {
+      "enabled": 1,
+      "description": "Уведомления о выходе участников"
+    },
+        "system_messages": {
+      "enabled": 1,
+      "description": "Системные сообщения и приветствия"
+    }
+  },
+  "settings": {
+    "auto_reload": 1,
+    "description": "Автоматическая перезагрузка настроек (1 - включено, 0 - выключено)"
+  },
+  "version": "1.0",
+  "last_updated": "2025-06-21"
+} 

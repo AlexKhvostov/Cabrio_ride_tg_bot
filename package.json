@@ -1,0 +1,56 @@
+{
+  "name": "cabrio-club-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram бот для клуба кабриолетов",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "prepare-deploy": "node prepare-deploy.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^5.1.0",
+    "multer": "^2.0.1",
+    "mysql2": "^3.6.5",
+    "node-fetch": "^2.7.0",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.3",
+    "supertest": "^6.3.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/bot/bot.js",
+      "!src/config/config.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ]
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "cabrio",
+    "club",
+    "cars",
+    "nodejs",
+    "mysql"
+  ],
+  "author": "Cabrio Club",
+  "license": "MIT"
+}
