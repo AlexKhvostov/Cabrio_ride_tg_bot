@@ -29,6 +29,69 @@ let activePassword = null;
 let passwordTimer = null;
 const PASSWORD_LIFETIME = 10 * 60 * 1000; // 10 минут в миллисекундах
 
+// Функция для безопасного экранирования Markdown
+function escapeMarkdown(text) {
+    if (!text) return '';
+    
+    // Экранируем символы, которые могут сломать Markdown
+    return text
+        .replace(/_/g, '\\_')
+        .replace(/\*/g, '\\*')
+        .replace(/\[/g, '\\[')
+        .replace(/\]/g, '\\]')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)')
+        .replace(/~/g, '\\~')
+        .replace(/`/g, '\\`')
+        .replace(/>/g, '\\>')
+        .replace(/#/g, '\\#')
+        .replace(/\+/g, '\\+')
+        .replace(/-/g, '\\-')
+        .replace(/=/g, '\\=')
+        .replace(/\|/g, '\\|')
+        .replace(/\{/g, '\\{')
+        .replace(/\}/g, '\\}')
+        .replace(/\./g, '\\.')
+        .replace(/!/g, '\\!');
+}
+
+// Безопасная функция отправки сообщений с Markdown
+async function safeSendMessage(chatId, text, options = {}) {
+    try {
+        // Если используется Markdown, экранируем текст
+        if (options.parse_mode === 'Markdown') {
+            // Создаем копию текста для экранирования
+            let safeText = text;
+            
+            // Экранируем все пользовательские данные, которые могут содержать специальные символы
+            // Это базовое экранирование, для более сложных случаев нужен более умный парсер
+            safeText = escapeMarkdown(safeText);
+            
+            return await bot.sendMessage(chatId, safeText, options);
+        } else {
+            return await bot.sendMessage(chatId, text, options);
+        }
+    } catch (error) {
+        console.error('❌ Ошибка отправки сообщения с Markdown:', error.message);
+        
+        // Если не удалось отправить с Markdown, пробуем без него
+        if (options.parse_mode === 'Markdown') {
+            console.log('🔄 Повторная попытка без Markdown...');
+            const fallbackOptions = { ...options };
+            delete fallbackOptions.parse_mode;
+            
+            try {
+                return await bot.sendMessage(chatId, text, fallbackOptions);
+            } catch (fallbackError) {
+                console.error('❌ Ошибка отправки сообщения без Markdown:', fallbackError.message);
+                throw fallbackError;
+            }
+        } else {
+            throw error;
+        }
+    }
+}
+
 // Функции для уведомлений в группу
 async function sendGroupNotification(message, options = {}, notificationType = null) {
     // Проверяем настройки уведомлений
@@ -363,6 +426,28 @@ function isAdmin(userId) {
     return isAdminUser;
 }
 
+// Функция для безопасного редактирования сообщений
+async function safeEditMessage(bot, chatId, messageId, text, options = {}) {
+    try {
+        await bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            ...options
+        });
+        return true; // Успешно отредактировано
+    } catch (editError) {
+        console.log(`⚠️ [EDIT_ERROR] Не удалось отредактировать сообщение ${messageId}:`, editError.message);
+        
+        // Отправляем новое сообщение
+        await bot.sendMessage(chatId, text, {
+            parse_mode: 'Markdown',
+            ...options
+        });
+        return false; // Отправлено новое сообщение
+    }
+}
+
 // Функция для добавления кнопки "Назад в меню" к клавиатуре
 function addBackToMenuButton(keyboard) {
     if (!keyboard) {
@@ -424,6 +509,29 @@ function getPasswordTimeLeft() {
     if (!passwordTimer) return 0;
     // Приблизительное время, так как точное время сложно вычислить
     return Math.ceil(PASSWORD_LIFETIME / 60000); // в минутах
+}
+
+// Функция форматирования времени работы
+function formatUptime(seconds) {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    
+    let uptimeString = '';
+    
+    if (days > 0) {
+        uptimeString += `${days} дн. `;
+    }
+    if (hours > 0 || days > 0) {
+        uptimeString += `${hours} ч. `;
+    }
+    if (minutes > 0 || hours > 0) {
+        uptimeString += `${minutes} мин. `;
+    }
+    uptimeString += `${remainingSeconds} сек.`;
+    
+    return uptimeString.trim();
 }
 
 // Команда /start
@@ -552,7 +660,7 @@ bot.onText(/\/status/, async (msg) => {
         
         // 5. Системная информация
         statusMessage += '💻 Система:\n';
-        statusMessage += `• Время работы: ${Math.floor(process.uptime())} сек\n`;
+        statusMessage += `• Время работы: ${formatUptime(Math.floor(process.uptime()))}\n`;
         statusMessage += `• Использование памяти: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB\n`;
         statusMessage += `• Node.js версия: ${process.version}\n`;
         statusMessage += `• Платформа: ${process.platform}\n\n`;
@@ -699,7 +807,7 @@ bot.onText(/\/authlogs/, async (msg) => {
             logText += `📝 Логов авторизации пока нет.\n\n`;
         }
         
-        logText += `🌐 Подробная информация: https://c.cabrioride.by/backend/log_auth.php`;
+                    logText += `🌐 Подробная информация: https://club.cabrioride.by/backend/log_auth.php`;
         
         const authLogsKeyboard = addBackToMenuButton({});
         bot.sendMessage(msg.chat.id, logText, { 
@@ -843,14 +951,8 @@ bot.onText(/\/getchatid/, async (msg) => {
     bot.sendMessage(msg.chat.id, infoMessage, { parse_mode: 'Markdown' });
 });
 
-// Команда /menu
-bot.onText(/\/menu/, async (msg) => {
-    if (!await checkAccess(msg)) return;
-    
-    // Проверяем доступность БД
-    if (!await checkDatabaseAccess(msg.chat.id)) return;
-    
-    const userId = msg.from.id;
+// Функция показа главного меню
+async function showMainMenu(msg, userId) {
     const isUserAdmin = isAdmin(userId);
     
     let keyboard = {
@@ -861,10 +963,14 @@ bot.onText(/\/menu/, async (msg) => {
                     { text: '👤 Личный кабинет', callback_data: 'category_profile' }
                 ],
                 [
-                    { text: '🎯 Активности клуба', callback_data: 'category_activities' }
+                    { text: '🔍 Поиск авто', callback_data: 'search_by_number' }
                 ],
                 [
-                    { text: '📊 Информация', callback_data: 'category_info' }
+                    { text: '📋 Визитки', callback_data: 'category_visits' }
+                ],
+                [
+                    { text: '🌐 Сайт', callback_data: 'open_website' },
+                    { text: '🏠 Клуб', callback_data: 'open_club' }
                 ]
             ]
         }
@@ -879,8 +985,10 @@ bot.onText(/\/menu/, async (msg) => {
     
     let menuText = '🚗 Главное меню Cabrio Club\n\n' +
         '👤 **Личный кабинет** - профиль, автомобили\n' +
-        '🎯 **Активности клуба** - приглашения, поиск\n' +
-        '📊 **Информация** - статистика, сайт, помощь\n';
+        '🔍 **Поиск авто** - поиск по номеру\n' +
+        '📋 **Визитки** - приглашения\n' +
+        '🌐 **Сайт** - официальный сайт клуба\n' +
+        '🏠 **Клуб** - веб-дашборд участников\n';
     
     if (isUserAdmin) {
         menuText += '🔒 **Администрирование** - управление ботом\n';
@@ -888,7 +996,38 @@ bot.onText(/\/menu/, async (msg) => {
     
     menuText += '\n👇 Выберите категорию:';
     
-    bot.sendMessage(msg.chat.id, menuText, { parse_mode: 'Markdown', ...keyboard });
+    // Проверяем, есть ли message_id (для callback_query)
+    if (msg.message_id) {
+        // Используем безопасное редактирование сообщений
+        await safeEditMessage(bot, msg.chat.id, msg.message_id, menuText, {
+            parse_mode: 'Markdown',
+            ...keyboard
+        });
+        
+        // Отвечаем на callback query, чтобы убрать "часики" у кнопки
+        try {
+            await bot.answerCallbackQuery(msg.id || 'unknown', { text: 'Меню обновлено' });
+        } catch (callbackError) {
+            console.log('⚠️ [CALLBACK_ERROR] Не удалось ответить на callback query:', callbackError.message);
+        }
+    } else {
+        // Для обычных сообщений (команда /menu)
+        await bot.sendMessage(msg.chat.id, menuText, {
+            parse_mode: 'Markdown',
+            ...keyboard
+        });
+    }
+}
+
+// Команда /menu
+bot.onText(/\/menu/, async (msg) => {
+    if (!await checkAccess(msg)) return;
+    
+    // Проверяем доступность БД
+    if (!await checkDatabaseAccess(msg.chat.id)) return;
+    
+    const userId = msg.from.id;
+    await showMainMenu(msg, userId);
 });
 
 // Команда /register
@@ -1224,6 +1363,11 @@ bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const userId = callbackQuery.from.id;
     
+    // 🔍 Логирование нажатия кнопки
+    const userName = callbackQuery.from.first_name || 'Unknown';
+    const userUsername = callbackQuery.from.username || 'no_username';
+    console.log(`🔘 [BUTTON] Пользователь ${userName} (@${userUsername}, ID: ${userId}) нажал кнопку: "${data}"`);
+    
     // Исключения для админских команд
     if (data === 'admin_status') {
         if (!isAdmin(userId)) {
@@ -1246,127 +1390,53 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         switch (data) {
             case 'my_profile':
+                console.log(`👤 [FUNCTION] Вызывается showUserProfile() для пользователя ${userId}`);
                 await showUserProfile(msg, userId);
                 break;
                 
             case 'my_cars':
+                console.log(`🚗 [FUNCTION] Вызывается showUserCars() для пользователя ${userId}`);
                 await showUserCars(msg, userId);
                 break;
                 
             case 'add_car':
+                console.log(`📝 [FUNCTION] Вызывается startAddCar() для пользователя ${userId}`);
                 await startAddCar(msg, userId);
                 break;
                 
             case 'my_invitations':
+                console.log(`📮 [FUNCTION] Вызывается showUserInvitations() для пользователя ${userId}`);
                 await showUserInvitations(msg, userId);
                 break;
                 
             case 'create_invitation':
+                console.log(`🎯 [FUNCTION] Вызывается startCreateInvitation() для пользователя ${userId}`);
                 await startCreateInvitation(msg, userId);
                 break;
                 
             case 'stats':
+                console.log(`📊 [FUNCTION] Вызывается showStats() для пользователя ${userId}`);
                 await showStats(msg);
                 break;
                 
             case 'web_dashboard':
-                // Проверяем статус пользователя для доступа к веб-дашборду
-                try {
-                    const member = await db.getMemberByTelegramId(userId);
-                    
-                    if (!member) {
-                        bot.answerCallbackQuery(callbackQuery.id, '❌ Вы не зарегистрированы в клубе');
-                        
-                        const notRegisteredKeyboard = {
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '📝 Зарегистрироваться', callback_data: 'register' }],
-                                    [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
-                                ]
-                            }
-                        };
-                        
-                        bot.sendMessage(msg.chat.id, 
-                            '❌ Доступ к веб-дашборду ограничен\n\n' +
-                            '🔐 Веб-дашборд доступен только активным участникам клуба.\n\n' +
-                            'Для получения доступа необходимо:\n' +
-                            '1️⃣ Зарегистрироваться в клубе\n' +
-                            '2️⃣ Добавить автомобиль\n' +
-                            '3️⃣ Получить статус "активный" от администратора\n\n' +
-                            '👇 Начните с регистрации:',
-                            { 
-                                parse_mode: 'Markdown',
-                                ...notRegisteredKeyboard 
-                            }
-                        );
-                        return;
-                    }
-                    
-                    // Проверяем статус пользователя - доступ только для активных участников
-                    if (member.status !== 'активный') {
-                        bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ ограничен');
-                        
-                        const statusIcon = member.status === 'новый' ? '🆕' : 
-                                         member.status === 'без авто' ? '⚪' : 
-                                         member.status === 'участник' ? '⚪' : 
-                                         member.status === 'вышел' ? '🚫' : 
-                                         member.status === 'бан' ? '🚫' : '❓';
-                        
-                        const restrictedKeyboard = {
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '📊 Обычная статистика', callback_data: 'stats' }],
-                                    [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
-                                ]
-                            }
-                        };
-                        
-                        bot.sendMessage(msg.chat.id, 
-                            '🔐 Доступ к веб-дашборду ограничен\n\n' +
-                            `👤 Ваш статус: ${statusIcon} **${member.status}**\n\n` +
-                            '🎯 Веб-дашборд доступен только **активным участникам** клуба.\n\n' +
-                            '🚗 Статус "активный" получают участники, которые:\n' +
-                            '• Приезжают на встречи клуба\n' +
-                            '• Активно участвуют в жизни сообщества\n' +
-                            '• Подтверждают свой статус у администратора\n\n' +
-                            '📊 Пока что вы можете использовать обычную статистику.\n' +
-                            '💬 Следите за объявлениями о встречах в группе!',
-                            { 
-                                parse_mode: 'Markdown',
-                                ...restrictedKeyboard 
-                            }
-                        );
-                        return;
-                    }
-                    
-                    // Если пользователь активный - предоставляем доступ к веб-дашборду
-                    await handleWebDashboard(msg, userId);
-                    
-                } catch (error) {
-                    console.error('Ошибка проверки доступа к веб-дашборду:', error);
-                    bot.answerCallbackQuery(callbackQuery.id, '❌ Ошибка проверки доступа');
-                    
-                    const errorKeyboard = addBackToMenuButton({});
-                    bot.sendMessage(msg.chat.id, 
-                        '❌ Произошла ошибка при проверке доступа к веб-дашборду.\n\n' +
-                        'Попробуйте позже или обратитесь к администратору.',
-                        { 
-                            parse_mode: 'Markdown',
-                            ...errorKeyboard 
-                        }
-                    );
-                }
+                console.log(`🏠 [FUNCTION] Вызывается handleWebDashboard() для пользователя ${userId}`);
+                // Упрощенный доступ к веб-дашборду - проверка на уровне веб-приложения
+                await handleWebDashboard(msg, userId);
                 break;
                 
             case 'help':
+                console.log(`❓ [FUNCTION] Вызывается showHelp() для пользователя ${userId}`);
                 await showHelp(msg);
                 break;
                 
             case 'search_by_number':
+                console.log(`🔍 [FUNCTION] Вызывается startSearchByNumber() для пользователя ${userId}`);
                 await startSearchByNumber(msg, userId);
                 break;
                 
             case 'register':
+                console.log(`📝 [FUNCTION] Начинается процесс регистрации для пользователя ${userId}`);
                 // Начинаем процесс регистрации
                 const newUserState = { 
                     state: 'registration', 
@@ -1396,6 +1466,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'skip_step':
+                console.log(`⏭️ [FUNCTION] Обрабатывается пропуск шага для пользователя ${userId}`);
                 // Обрабатываем пропуск шага
                 const userStateForSkip = userStates.get(userId);
                 if (userStateForSkip) {
@@ -1439,6 +1510,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'finish_photos':
+                console.log(`✅ [FUNCTION] Завершение добавления фото для пользователя ${userId}`);
                 // Обрабатываем завершение добавления фото
                 const userStateForFinish = userStates.get(userId);
                 if (userStateForFinish) {
@@ -1451,6 +1523,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'continue_photos':
+                console.log(`📸 [FUNCTION] Продолжение добавления фото для пользователя ${userId}`);
                 // Пользователь хочет добавить ещё фото - просто отправляем подсказку
                 const userStateForContinue = userStates.get(userId);
                 if (userStateForContinue) {
@@ -1463,6 +1536,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'finish_invitation':
+                console.log(`🎯 [FUNCTION] Завершение создания приглашения для пользователя ${userId}`);
                 // Завершаем создание приглашения
                 const userStateForFinishInvitation = userStates.get(userId);
                 if (userStateForFinishInvitation && userStateForFinishInvitation.state === 'creating_invitation') {
@@ -1472,63 +1546,16 @@ bot.on('callback_query', async (callbackQuery) => {
                 
             case 'menu':
             case 'back_to_menu':
+                console.log(`🏠 [FUNCTION] Вызывается showMainMenu() для пользователя ${userId}`);
+                // Очищаем состояние пользователя при возврате в меню
+                userStates.delete(userId);
+                console.log(`🧹 [STATE] Очищено состояние пользователя ${userId}`);
                 // Показываем главное меню с категориями
-                const isUserAdminCallback = isAdmin(userId);
-                
-                let menuKeyboard = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            // Основные категории (по одной кнопке в строку)
-                            [
-                                { text: '👤 Личный кабинет', callback_data: 'category_profile' }
-                            ],
-                            [
-                                { text: '🎯 Активности клуба', callback_data: 'category_activities' }
-                            ],
-                            [
-                                { text: '📊 Информация', callback_data: 'category_info' }
-                            ]
-                        ]
-                    }
-                };
-                
-                // Добавляем админскую категорию если пользователь админ
-                if (isUserAdminCallback) {
-                    menuKeyboard.reply_markup.inline_keyboard.push([
-                        { text: '🔒 Администрирование', callback_data: 'category_admin' }
-                    ]);
-                }
-                
-                let menuTextCallback = '🚗 Главное меню Cabrio Club\n\n' +
-                    '👤 **Личный кабинет** - профиль, автомобили\n' +
-                    '🎯 **Активности клуба** - приглашения, поиск\n' +
-                    '📊 **Информация** - статистика, сайт, помощь\n';
-                
-                if (isUserAdminCallback) {
-                    menuTextCallback += '🔒 **Администрирование** - управление ботом\n';
-                }
-                
-                menuTextCallback += '\n👇 Выберите категорию:';
-                
-                try {
-                    // Пытаемся отредактировать сообщение
-                    await bot.editMessageText(menuTextCallback, {
-                        chat_id: msg.chat.id,
-                        message_id: msg.message_id,
-                        parse_mode: 'Markdown',
-                        ...menuKeyboard
-                    });
-                } catch (editError) {
-                    // Если не удалось отредактировать, отправляем новое сообщение
-                    console.log('Не удалось отредактировать сообщение, отправляем новое:', editError.message);
-                    await bot.sendMessage(msg.chat.id, menuTextCallback, {
-                        parse_mode: 'Markdown',
-                        ...menuKeyboard
-                    });
-                }
+                await showMainMenu(msg, userId);
                 break;
                 
             case 'category_profile':
+                console.log(`👤 [FUNCTION] Показывается подменю "Личный кабинет" для пользователя ${userId}`);
                 // Показываем подменю "Личный кабинет"
                 const profileKeyboard = {
                     reply_markup: {
@@ -1569,18 +1596,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 }
                 break;
                 
-            case 'category_activities':
-                // Показываем подменю "Активности клуба"
-                const activitiesKeyboard = {
+            case 'category_visits':
+                console.log(`📋 [FUNCTION] Показывается подменю "Визитки" для пользователя ${userId}`);
+                // Показываем подменю "Визитки"
+                const visitsKeyboard = {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '🎉 События клуба', callback_data: 'events_menu' },
-                                { text: '🔧 Сервисы', callback_data: 'services_menu' }
-                            ],
-                            [
-                                { text: '🎯 Оставить приглашение', callback_data: 'create_invitation' },
-                                { text: '🔍 Поиск авто', callback_data: 'search_by_number' }
+                                { text: '🎯 Оставить приглашение', callback_data: 'create_invitation' }
                             ],
                             [
                                 { text: '📮 Мои приглашения', callback_data: 'my_invitations' }
@@ -1592,46 +1615,86 @@ bot.on('callback_query', async (callbackQuery) => {
                     }
                 };
                 
-                const activitiesText = '🎯 Активности клуба\n\n' +
-                    '🚗 Взаимодействие с другими участниками:\n\n' +
-                    '• **События клуба** - заезды, встречи, фотосессии\n' +
-                    '• **Сервисы** - каталог автосервисов с рейтингами\n\n' +
-                    '📨 **Приглашения:**\n' +
+                const visitsText = '📋 Визитки\n\n' +
+                    '🎯 Система приглашений в клуб:\n\n' +
                     '• **Оставить приглашение** - пригласить автомобиль в клуб\n' +
-                    '• **Поиск авто** - найти автомобиль по номеру\n' +
                     '• **Мои приглашения** - просмотр отправленных приглашений\n\n' +
+                    '💡 Увидели красивый кабриолет? Оставьте приглашение!\n\n' +
                     '👇 Выберите действие:';
                 
                 try {
-                    await bot.editMessageText(activitiesText, {
+                    await bot.editMessageText(visitsText, {
                         chat_id: msg.chat.id,
                         message_id: msg.message_id,
                         parse_mode: 'Markdown',
-                        ...activitiesKeyboard
+                        ...visitsKeyboard
                     });
                 } catch (editError) {
-                    await bot.sendMessage(msg.chat.id, activitiesText, {
+                    await bot.sendMessage(msg.chat.id, visitsText, {
                         parse_mode: 'Markdown',
-                        ...activitiesKeyboard
+                        ...visitsKeyboard
                     });
                 }
                 break;
                 
+            case 'open_website':
+                console.log(`🌐 [FUNCTION] Показывается информация о сайте клуба для пользователя ${userId}`);
+                // Открываем основной сайт клуба
+                const websiteKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '🌐 Открыть сайт', url: 'https://cabrioride.by' }
+                            ],
+                            [
+                                { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
+                            ]
+                        ]
+                    }
+                };
+                
+                const websiteText = '🌐 Сайт клуба\n\n' +
+                    '🏠 **CabrioRide.by** - официальный сайт клуба кабриолетов\n\n' +
+                    '📰 Новости, статьи, галерея автомобилей участников\n' +
+                    '📞 Контактная информация\n' +
+                    '📸 Фотографии с мероприятий\n\n' +
+                    '👇 Нажмите кнопку для перехода на сайт:';
+                
+                try {
+                    await bot.editMessageText(websiteText, {
+                        chat_id: msg.chat.id,
+                        message_id: msg.message_id,
+                        parse_mode: 'Markdown',
+                        ...websiteKeyboard
+                    });
+                } catch (editError) {
+                    await bot.sendMessage(msg.chat.id, websiteText, {
+                        parse_mode: 'Markdown',
+                        ...websiteKeyboard
+                    });
+                }
+                break;
+                
+            case 'open_club':
+                console.log(`🏠 [FUNCTION] Вызывается handleWebDashboard() для пользователя ${userId}`);
+                // Вызываем функцию с авторизацией
+                await handleWebDashboard(msg, userId);
+                break;
+                
+
+                
             case 'category_info':
+                console.log(`📊 [FUNCTION] Показывается подменю "Информация" для пользователя ${userId}`);
                 // Показываем подменю "Информация"
                 const infoKeyboard = {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '🏠 Сайт клуба', url: 'https://cabrioride.by' }
+                                { text: '📊 Статистика клуба', callback_data: 'stats' },
+                                { text: '🌐 Сайт клуба', callback_data: 'open_website' }
                             ],
                             [
-                                { text: '🌐 Веб-дашборд', callback_data: 'web_dashboard' }
-                            ],
-                            [
-                                { text: '📊 Статистика клуба', callback_data: 'stats' }
-                            ],
-                            [
+                                { text: '🏠 Веб-дашборд', callback_data: 'open_club' },
                                 { text: '❓ Помощь', callback_data: 'help' }
                             ],
                             [
@@ -1642,12 +1705,12 @@ bot.on('callback_query', async (callbackQuery) => {
                 };
                 
                 const infoText = '📊 Информация\n\n' +
-                    '📈 Данные и справочная информация:\n\n' +
-                    '• **Сайт клуба** - официальный сайт cabrioride.by\n' +
-                    '• **Веб-дашборд** - расширенная статистика в браузере\n' +
-                    '• **Статистика клуба** - общие показатели участников\n' +
-                    '• **Помощь** - список команд и инструкции\n\n' +
-                    '👇 Выберите действие:';
+                    '📈 Информационные разделы клуба:\n\n' +
+                    '• **Статистика клуба** - количество участников и автомобилей\n' +
+                    '• **Сайт клуба** - официальный сайт CabrioRide.by\n' +
+                    '• **Веб-дашборд** - расширенная статистика и каталог\n' +
+                    '• **Помощь** - инструкции по использованию бота\n\n' +
+                    '👇 Выберите раздел:';
                 
                 try {
                     await bot.editMessageText(infoText, {
@@ -1665,6 +1728,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'category_admin':
+                console.log(`🔒 [FUNCTION] Показывается подменю "Администрирование" для пользователя ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -1688,6 +1752,9 @@ bot.on('callback_query', async (callbackQuery) => {
                                 { text: '🔐 Установить пароль', callback_data: 'admin_setpass' }
                             ],
                             [
+                                { text: '🚀 Future', callback_data: 'admin_future' }
+                            ],
+                            [
                                 { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
                             ]
                         ]
@@ -1706,6 +1773,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     '• **Логи авторизации** - статистика входов на сайт\n' +
                     '• **Изменить статус** - управление статусами участников\n' +
                     '• **Установить пароль** - временный пароль для получения активного статуса\n' +
+                    '• **Future** - экспериментальные функции (события, сервисы)\n' +
                     passwordStatus + '\n\n' +
                     '👇 Выберите действие:';
                 
@@ -1724,11 +1792,67 @@ bot.on('callback_query', async (callbackQuery) => {
                 }
                 break;
 
+            case 'admin_future':
+                console.log(`🚀 [FUNCTION] Показывается подменю "Future" для пользователя ${userId}`);
+                // Проверяем админские права
+                if (!isAdmin(userId)) {
+                    bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
+                    return;
+                }
+                
+                // Показываем подменю "Future" с экспериментальными функциями
+                const futureKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '🎉 События клуба', callback_data: 'events_menu' },
+                                { text: '🔧 Сервисы', callback_data: 'services_menu' }
+                            ],
+                            [
+                                { text: '🎯 Оставить приглашение', callback_data: 'create_invitation' },
+                                { text: '🔍 Поиск авто', callback_data: 'search_by_number' }
+                            ],
+                            [
+                                { text: '📮 Мои приглашения', callback_data: 'my_invitations' }
+                            ],
+                            [
+                                { text: '🔙 Назад к админке', callback_data: 'category_admin' }
+                            ]
+                        ]
+                    }
+                };
+                
+                const futureText = '🚀 Future - Экспериментальные функции\n\n' +
+                    '🧪 Функции в разработке и тестировании:\n\n' +
+                    '🎉 **События клуба** - управление мероприятиями\n' +
+                    '🔧 **Сервисы** - каталог автосервисов\n' +
+                    '🎯 **Приглашения** - система приглашений\n' +
+                    '🔍 **Поиск авто** - поиск по номеру\n\n' +
+                    '⚠️ Эти функции могут работать нестабильно\n' +
+                    '📝 Отправляйте отзывы о работе функций\n\n' +
+                    '👇 Выберите функцию для тестирования:';
+                
+                try {
+                    await bot.editMessageText(futureText, {
+                        chat_id: msg.chat.id,
+                        message_id: msg.message_id,
+                        parse_mode: 'Markdown',
+                        ...futureKeyboard
+                    });
+                } catch (editError) {
+                    await bot.sendMessage(msg.chat.id, futureText, {
+                        parse_mode: 'Markdown',
+                        ...futureKeyboard
+                    });
+                }
+                break;
+
             // =====================================================
             // 🎉 События клуба
             // =====================================================
             
             case 'events_menu':
+                console.log(`🎉 [FUNCTION] Показывается меню событий для пользователя ${userId}`);
                 // Показываем меню событий
                 const eventsKeyboard = {
                     reply_markup: {
@@ -1741,7 +1865,7 @@ bot.on('callback_query', async (callbackQuery) => {
                                 { text: '📋 Мои события', callback_data: 'my_events' }
                             ],
                             [
-                                { text: '🔙 Назад к активностям', callback_data: 'category_activities' }
+                                { text: '🔙 Назад к Future', callback_data: 'admin_future' }
                             ]
                         ]
                     }
@@ -1787,7 +1911,7 @@ bot.on('callback_query', async (callbackQuery) => {
                                 { text: '🔧 По типам', callback_data: 'services_by_type' }
                             ],
                             [
-                                { text: '🔙 Назад к активностям', callback_data: 'category_activities' }
+                                { text: '🔙 Назад к Future', callback_data: 'admin_future' }
                             ]
                         ]
                     }
@@ -1819,16 +1943,19 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'view_all_events':
+                console.log(`🎉 [FUNCTION] Показ всех событий для пользователя ${userId}`);
                 // Показываем все события
                 await showAllEvents(msg, userId);
                 break;
 
             case 'view_all_services':
+                console.log(`🔧 [FUNCTION] Показ всех сервисов для пользователя ${userId}`);
                 // Показываем все сервисы
                 await showAllServices(msg, userId);
                 break;
 
             case 'create_event':
+                console.log(`🚧 [FUNCTION] Попытка создания события (в разработке) для пользователя ${userId}`);
                 // Заглушка - функция в разработке
                 bot.answerCallbackQuery(callbackQuery.id, '🚧 Функция в разработке');
                 bot.sendMessage(msg.chat.id, 
@@ -1848,6 +1975,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'add_service':
+                console.log(`🚧 [FUNCTION] Попытка добавления сервиса (в разработке) для пользователя ${userId}`);
                 // Заглушка - функция в разработке
                 bot.answerCallbackQuery(callbackQuery.id, '🚧 Функция в разработке');
                 bot.sendMessage(msg.chat.id, 
@@ -1871,6 +1999,7 @@ bot.on('callback_query', async (callbackQuery) => {
             case 'recommended_services':
             case 'services_by_city':
             case 'services_by_type':
+                console.log(`🚧 [FUNCTION] Попытка использования функции "${data}" (в разработке) для пользователя ${userId}`);
                 bot.answerCallbackQuery(callbackQuery.id, '🚧 Функция в разработке');
                 bot.sendMessage(msg.chat.id, 
                     '🚧 **Функция в разработке**\n\n' +
@@ -1889,6 +2018,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'get_active_status':
+                console.log(`🎯 [FUNCTION] Запрос на получение активного статуса для пользователя ${userId}`);
                 // Обработка запроса на получение активного статуса
                 try {
                     const member = await db.getMemberByTelegramId(userId);
@@ -2039,6 +2169,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'start_setuserstatus':
+                console.log(`🔧 [FUNCTION] Начинается процесс изменения статуса пользователя для админа ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2092,10 +2223,12 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'edit_profile':
+                console.log(`✏️ [FUNCTION] Вызывается showEditProfileMenu() для пользователя ${userId}`);
                 await showEditProfileMenu(msg, userId);
                 break;
                 
             case 'admin_status':
+                console.log(`🔧 [FUNCTION] Вызывается системная диагностика для админа ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2160,7 +2293,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     
                     // 5. Системная информация
                     statusMessage += '💻 Система:\n';
-                    statusMessage += `• Время работы: ${Math.floor(process.uptime())} сек\n`;
+                    statusMessage += `• Время работы: ${formatUptime(Math.floor(process.uptime()))}\n`;
                     statusMessage += `• Использование памяти: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB\n`;
                     statusMessage += `• Node.js версия: ${process.version}\n`;
                     statusMessage += `• Платформа: ${process.platform}\n\n`;
@@ -2208,6 +2341,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'admin_test':
+                console.log(`🔐 [FUNCTION] Проверка админских прав для пользователя ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2229,6 +2363,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'notification_settings':
+                console.log(`🔕 [FUNCTION] Показываются настройки уведомлений для админа ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2256,6 +2391,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'auth_logs':
+                console.log(`📊 [FUNCTION] Показываются логи авторизации для админа ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2285,20 +2421,20 @@ bot.on('callback_query', async (callbackQuery) => {
                             const memberIcon = log.is_member ? '👥' : '👤';
                             
                             logText += `${index + 1}. ${statusIcon} ${memberIcon} `;
-                            logText += `${log.first_name || 'N/A'}`;
-                            if (log.username) logText += ` (@${log.username})`;
+                            logText += `${escapeMarkdown(log.first_name || 'N/A')}`;
+                            if (log.username) logText += ` (@${escapeMarkdown(log.username)})`;
                             logText += `\n   📅 ${date}`;
-                            if (log.notes) logText += `\n   📝 ${log.notes}`;
+                            if (log.notes) logText += `\n   📝 ${escapeMarkdown(log.notes)}`;
                             logText += `\n\n`;
                         });
                     } else {
                         logText += `📝 Логов авторизации пока нет.\n\n`;
                     }
                     
-                    logText += `🌐 Подробная информация: https://c.cabrioride.by/backend/log_auth.php`;
+                    logText += `🌐 Подробная информация: https://club.cabrioride.by/backend/log_auth.php`;
                     
                     const authLogsKeyboard = addBackToMenuButton({});
-                    bot.sendMessage(msg.chat.id, logText, { 
+                    await safeSendMessage(msg.chat.id, logText, { 
                         parse_mode: 'Markdown',
                         ...authLogsKeyboard 
                     });
@@ -2310,6 +2446,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'admin_setpass':
+                console.log(`🔐 [FUNCTION] Начинается установка временного пароля для админа ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2341,6 +2478,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'continue_invitation':
+                console.log(`🎯 [FUNCTION] Продолжение создания приглашения для пользователя ${userId}`);
                 // Продолжаем создание приглашения
                 const userStateForContinueInvitation = userStates.get(userId);
                 if (userStateForContinueInvitation && 
@@ -2375,6 +2513,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'cancel_invitation':
+                console.log(`❌ [FUNCTION] Отмена создания приглашения для пользователя ${userId}`);
                 // Отменяем создание приглашения
                 const userStateForCancelInvitation = userStates.get(userId);
                 if (userStateForCancelInvitation && 
@@ -2402,6 +2541,7 @@ bot.on('callback_query', async (callbackQuery) => {
             case 'status_активный':
             case 'status_вышел':
             case 'status_бан':
+                console.log(`🔧 [FUNCTION] Выбор статуса "${data}" для изменения пользователя админом ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2437,6 +2577,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
                 
             case 'cancel_status_change':
+                console.log(`❌ [FUNCTION] Отмена изменения статуса пользователя админом ${userId}`);
                 // Проверяем админские права
                 if (!isAdmin(userId)) {
                     bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2457,6 +2598,7 @@ bot.on('callback_query', async (callbackQuery) => {
                  break;
                  
              case 'confirm_status_change':
+                 console.log(`✅ [FUNCTION] Подтверждение изменения статуса пользователя админом ${userId}`);
                  // Проверяем админские права
                  if (!isAdmin(userId)) {
                      bot.answerCallbackQuery(callbackQuery.id, '❌ Доступ запрещён');
@@ -2519,72 +2661,92 @@ bot.on('callback_query', async (callbackQuery) => {
                  
             // Обработчики редактирования профиля
             case 'edit_first_name':
+                console.log(`✏️ [FUNCTION] Редактирование имени для пользователя ${userId}`);
                 await startEditField(msg, userId, 'first_name', '👤 Изменение имени', 'Введите новое имя:', true);
                 break;
                 
             case 'edit_last_name':
+                console.log(`✏️ [FUNCTION] Редактирование фамилии для пользователя ${userId}`);
                 await startEditField(msg, userId, 'last_name', '📝 Изменение фамилии', 'Введите новую фамилию (или отправьте любой текст для удаления):');
                 break;
                 
             case 'edit_birth_date':
+                console.log(`🎂 [FUNCTION] Редактирование даты рождения для пользователя ${userId}`);
                 await startEditField(msg, userId, 'birth_date', '🎂 Изменение даты рождения', 'Введите дату рождения в формате ДД.ММ.ГГГГ (например: 15.03.1990):');
                 break;
                 
             case 'edit_city':
+                console.log(`🏙️ [FUNCTION] Редактирование города для пользователя ${userId}`);
                 await startEditField(msg, userId, 'city', '🏙️ Изменение города', 'Введите новый город (или отправьте любой текст для удаления):');
                 break;
                 
             case 'edit_country':
+                console.log(`🌍 [FUNCTION] Редактирование страны для пользователя ${userId}`);
                 await startEditField(msg, userId, 'country', '🌍 Изменение страны', 'Введите новую страну (или отправьте любой текст для удаления):');
                 break;
                 
             case 'edit_phone':
+                console.log(`📱 [FUNCTION] Редактирование телефона для пользователя ${userId}`);
                 await startEditField(msg, userId, 'phone', '📱 Изменение телефона', 'Введите новый номер телефона (или отправьте любой текст для удаления):');
                 break;
                 
             case 'edit_about':
+                console.log(`💭 [FUNCTION] Редактирование описания для пользователя ${userId}`);
                 await startEditField(msg, userId, 'about', '💭 Изменение описания', 'Расскажите о себе (или отправьте любой текст для удаления):');
                 break;
                 
             case 'edit_photo':
+                console.log(`📸 [FUNCTION] Редактирование фото профиля для пользователя ${userId}`);
                 await startEditPhoto(msg, userId);
                 break;
                 
             case 'delete_photo':
+                console.log(`🗑️ [FUNCTION] Удаление фото профиля для пользователя ${userId}`);
                 await deleteProfilePhoto(msg, userId);
                 break;
                 
             default:
+                console.log(`🔍 [PATTERN] Обработка специального паттерна "${data}" для пользователя ${userId}`);
                 // Проверяем callback_data на специальные паттерны
                 // ВАЖНО: Сначала более специфические обработчики, потом общие!
                 if (data.startsWith('edit_car_brand_')) {
                     const carId = data.replace('edit_car_brand_', '');
+                    console.log(`🏭 [FUNCTION] Редактирование марки автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'brand', '🏭 Изменение марки', 'Введите новую марку автомобиля:', true);
                 } else if (data.startsWith('edit_car_model_')) {
                     const carId = data.replace('edit_car_model_', '');
+                    console.log(`🚗 [FUNCTION] Редактирование модели автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'model', '🚗 Изменение модели', 'Введите новую модель автомобиля:', true);
                 } else if (data.startsWith('edit_car_generation_')) {
                     const carId = data.replace('edit_car_generation_', '');
+                    console.log(`📋 [FUNCTION] Редактирование поколения автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'generation', '📋 Изменение поколения', 'Введите поколение автомобиля:');
                 } else if (data.startsWith('edit_car_year_')) {
                     const carId = data.replace('edit_car_year_', '');
+                    console.log(`📅 [FUNCTION] Редактирование года автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'year', '📅 Изменение года', 'Введите год выпуска автомобиля:', true);
                 } else if (data.startsWith('edit_car_reg_number_')) {
                     const carId = data.replace('edit_car_reg_number_', '');
+                    console.log(`🔢 [FUNCTION] Редактирование номера автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'reg_number', '🔢 Изменение номера', 'Введите регистрационный номер автомобиля:');
                 } else if (data.startsWith('edit_car_color_')) {
                     const carId = data.replace('edit_car_color_', '');
+                    console.log(`🎨 [FUNCTION] Редактирование цвета автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'color', '🎨 Изменение цвета', 'Введите цвет автомобиля:');
                 } else if (data.startsWith('edit_car_description_')) {
                     const carId = data.replace('edit_car_description_', '');
+                    console.log(`💭 [FUNCTION] Редактирование описания автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarField(msg, userId, carId, 'description', '💭 Изменение описания', 'Введите описание автомобиля:');
                 } else if (data.startsWith('edit_car_add_photo_')) {
                     const carId = data.replace('edit_car_add_photo_', '');
+                    console.log(`📸 [FUNCTION] Добавление фото автомобиля ${carId} для пользователя ${userId}`);
                     await startEditCarPhoto(msg, userId, carId);
                 } else if (data.startsWith('edit_car_delete_photo_')) {
                     const carId = data.replace('edit_car_delete_photo_', '');
+                    console.log(`🗑️ [FUNCTION] Удаление фото автомобиля ${carId} для пользователя ${userId}`);
                     await showDeleteCarPhotoMenu(msg, userId, carId);
                 } else if (data === 'continue_adding_photos') {
+                    console.log(`📸 [FUNCTION] Продолжение добавления фото для пользователя ${userId}`);
                     // Пользователь хочет добавить еще фото - просто оставляем состояние как есть
                     bot.sendMessage(msg.chat.id, 
                         '📸 Отправьте следующую фотографию автомобиля\n\n' +
@@ -3222,22 +3384,6 @@ async function handleWebDashboard(msg, userId) {
         // Получаем данные пользователя из базы
         const member = await db.getMemberByTelegramId(userId);
         
-        if (!member) {
-            bot.sendMessage(msg.chat.id, 
-                '❌ Вы не зарегистрированы в клубе.\n' +
-                'Для доступа к веб-дашборду сначала пройдите регистрацию через команду /register'
-            );
-            return;
-        }
-        
-        if (member.status === 'вышел') {
-            bot.sendMessage(msg.chat.id, 
-                '❌ Ваш статус в клубе: "вышел".\n' +
-                'Для доступа к веб-дашборду обратитесь к администратору для восстановления доступа.'
-            );
-            return;
-        }
-        
         // Генерируем ссылку с параметрами авторизации
         const timestamp = Math.floor(Date.now() / 1000);
         const hash = require('crypto').createHmac('sha256', config.BOT_TOKEN)
@@ -3250,19 +3396,23 @@ async function handleWebDashboard(msg, userId) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '🌐 Открыть веб-дашборд', url: authUrl }
+                        { text: '🏠 Открыть клуб', url: authUrl }
                     ],
                     [
-                        { text: '🔙 Назад в меню', callback_data: 'menu' }
+                        { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
                     ]
                 ]
             }
         };
         
+        const welcomeText = member ? 
+            `Добро пожаловать, ${member.first_name}!` : 
+            'Добро пожаловать в клуб!';
+        
         bot.sendMessage(msg.chat.id, 
-            `🌐 Веб-дашборд Cabrio Club\n\n` +
-            `Добро пожаловать, ${member.first_name}!\n\n` +
-            `🎯 Что доступно в веб-дашборде:\n` +
+            `🏠 Клуб участников Cabrio Club\n\n` +
+            `${welcomeText}\n\n` +
+            `🎯 Что доступно в клубе:\n` +
             `• 📊 Статистика клуба в реальном времени\n` +
             `• 👥 Список всех участников с фото\n` +
             `• 🚗 Каталог автомобилей клуба\n` +
@@ -3270,7 +3420,7 @@ async function handleWebDashboard(msg, userId) {
             `• 🔍 Удобные фильтры и поиск\n\n` +
             `🔐 Безопасность:\n` +
             `• Автоматическая авторизация через Telegram\n` +
-            `• Доступ только для участников клуба\n` +
+            `• Проверка доступа на уровне веб-приложения\n` +
             `• Персонализированный интерфейс\n\n` +
             `👆 Нажмите кнопку ниже для входа:`,
             { 
@@ -3281,7 +3431,7 @@ async function handleWebDashboard(msg, userId) {
         
     } catch (error) {
         console.error('Ошибка обработки веб-дашборда:', error);
-        bot.sendMessage(msg.chat.id, '❌ Произошла ошибка при генерации ссылки на веб-дашборд.');
+        bot.sendMessage(msg.chat.id, '❌ Произошла ошибка при генерации ссылки на клуб.');
     }
 }
 
@@ -3352,8 +3502,49 @@ bot.on('message', async (msg) => {
     console.log(`🔍 Все состояния:`, Array.from(userStates.entries()));
     
     if (!userState) {
-        console.log(`❌ Нет активного состояния для пользователя ${userId}`);
-        return; // Нет активного состояния
+        console.log(`🔍 Нет активного состояния для пользователя ${userId}, запускаем автоматический поиск`);
+        
+        // Проверяем, что текст похож на номер автомобиля (содержит только буквы и цифры)
+        const cleanText = msg.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
+        if (cleanText.length >= 2 && /^[A-Z0-9]+$/.test(cleanText)) {
+            // Похоже на номер автомобиля - запускаем поиск
+            console.log(`🚗 Автоматический поиск по номеру: "${cleanText}"`);
+            
+            try {
+                // Ищем автомобили по частичному совпадению
+                const cars = await db.searchCarsByRegNumber(cleanText);
+                
+                // Используем единую функцию для показа результатов
+                await showSearchResults(msg.chat.id, cleanText, cars);
+            } catch (error) {
+                console.error('Ошибка автоматического поиска:', error);
+                bot.sendMessage(msg.chat.id, 
+                    '❌ Ошибка поиска. Попробуйте использовать /menu для доступа к функциям.',
+                    {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
+                            ]
+                        }
+                    }
+                );
+            }
+        } else {
+            // Не похоже на номер - предлагаем меню
+            bot.sendMessage(msg.chat.id, 
+                '👋 Привет! Я не понимаю, что вы хотите сделать.\n\n' +
+                '💡 Используйте /menu для доступа к функциям бота.',
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔙 Открыть меню', callback_data: 'back_to_menu' }]
+                        ]
+                    }
+                }
+            );
+        }
+        return;
     }
     
     try {
@@ -3909,7 +4100,7 @@ async function completeRegistration(msg, userId, data) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '📋 Главное меню', callback_data: 'menu' },
+                        { text: '📋 Главное меню', callback_data: 'back_to_menu' },
                         { text: '🚗 Добавить авто', callback_data: 'add_car' }
                     ]
                 ]
@@ -4423,7 +4614,7 @@ async function completeAddCar(msg, userId, data) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '📋 Главное меню', callback_data: 'menu' },
+                        { text: '📋 Главное меню', callback_data: 'back_to_menu' },
                         { text: '🎯 Новое приглашение', callback_data: 'create_invitation' }
                     ]
                 ]
@@ -4608,7 +4799,7 @@ async function handleCreateInvitation(msg, userId, userState) {
                             reply_markup: {
                                 inline_keyboard: [
                                     [
-                                        { text: '📋 Главное меню', callback_data: 'menu' },
+                                        { text: '📋 Главное меню', callback_data: 'back_to_menu' },
                                         { text: '🎯 Новое приглашение', callback_data: 'create_invitation' }
                                     ]
                                 ]
@@ -5082,7 +5273,7 @@ async function completeCreateInvitation(msg, userId, data) {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '📋 Главное меню', callback_data: 'menu' },
+                        { text: '📋 Главное меню', callback_data: 'back_to_menu' },
                         { text: '🎯 Ещё приглашение', callback_data: 'create_invitation' }
                     ],
                     [
@@ -5437,7 +5628,9 @@ async function startSearchByNumber(msg, userId) {
             'Введите регистрационный номер или его часть:\n' +
             '• Полный номер: A123BC77\n' +
             '• Частичный поиск: A123, BC77, 123\n\n' +
-            'Поиск не чувствителен к регистру.',
+            '💡 Система автоматически очистит ввод от лишних символов\n' +
+            '📊 Результат: найдено/не найдено совпадений\n' +
+            '🔒 Подробная информация доступна администраторам',
             { 
                 parse_mode: 'Markdown',
                 ...searchKeyboard 
@@ -5450,12 +5643,58 @@ async function startSearchByNumber(msg, userId) {
     }
 }
 
+// Единая функция для показа результатов поиска
+async function showSearchResults(chatId, cleanQuery, cars) {
+    if (cars.length === 0) {
+        bot.sendMessage(chatId, 
+            `🔍 По запросу "${cleanQuery}" похожих автомобилей не найдено.\n\n` +
+            '💡 Возможно, владелец этого автомобиля ещё не в клубе.\n' +
+            '🎯 Хотите оставить приглашение для него?',
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🎯 Оставить приглашение', callback_data: 'create_invitation' },
+                            { text: '🔍 Новый поиск', callback_data: 'search_by_number' }
+                        ],
+                        [
+                            { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
+                        ]
+                    ]
+                }
+            }
+        );
+    } else {
+        // Если найдены совпадения, сообщаем об этом
+        let resultsText = `🔍 По запросу "${cleanQuery}" найдено совпадений: ${cars.length}\n\n`;
+        resultsText += `✅ В базе данных есть автомобили с похожими номерами.\n\n`;
+        resultsText += `💡 Для получения подробной информации обратитесь к администратору клуба.`;
+        
+        const keyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🔍 Новый поиск', callback_data: 'search_by_number' },
+                        { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
+                    ]
+                ]
+            }
+        };
+        
+        bot.sendMessage(chatId, resultsText, { 
+            parse_mode: 'Markdown',
+            ...keyboard 
+        });
+    }
+}
+
 // Обработка поиска по номеру
 async function handleSearch(msg, userId, userState) {
     try {
-        const searchQuery = msg.text.trim().toUpperCase();
+        // Очищаем строку от всех символов кроме цифр и английских букв
+        const cleanQuery = msg.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         
-        if (searchQuery.length < 2) {
+        if (cleanQuery.length < 2) {
             bot.sendMessage(msg.chat.id, 
                 '❌ Введите минимум 2 символа для поиска.\n' +
                 'Попробуйте ещё раз:'
@@ -5464,86 +5703,12 @@ async function handleSearch(msg, userId, userState) {
         }
         
         // Ищем автомобили по частичному совпадению
-        const cars = await db.searchCarsByRegNumber(searchQuery);
+        const cars = await db.searchCarsByRegNumber(cleanQuery);
         
         userStates.delete(userId);
         
-        if (cars.length === 0) {
-            bot.sendMessage(msg.chat.id, 
-                `🔍 По запросу "${searchQuery}" ничего не найдено.\n\n` +
-                'Попробуйте другой номер или его часть.',
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                { text: '🔍 Новый поиск', callback_data: 'search_by_number' },
-                                { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
-                            ]
-                        ]
-                    }
-                }
-            );
-            return;
-        }
-        
-        let resultsText = `🔍 Результаты поиска по "${searchQuery}"\n\n`;
-        resultsText += `Найдено автомобилей: ${cars.length}\n\n`;
-        
-        for (let i = 0; i < cars.length; i++) {
-            const car = cars[i];
-            resultsText += `${i + 1}. ${car.brand} ${car.model}`;
-            if (car.year) resultsText += ` (${car.year})`;
-            resultsText += `\n🔢 Номер: ${car.reg_number || 'не указан'}`;
-            resultsText += `\n📊 Статус: ${car.status}`;
-            
-            // Показываем информацию о фотографиях
-            if (car.photos) {
-                try {
-                    const photos = JSON.parse(car.photos);
-                    if (photos && photos.length > 0) {
-                        resultsText += `\n📸 Фотографий: ${photos.length}`;
-                    }
-                } catch (error) {
-                    console.error('Ошибка парсинга фото:', error);
-                }
-            }
-            
-            // Если это автомобиль для приглашений, показываем количество приглашений
-            if (car.status === 'приглашение') {
-                try {
-                    const invitations = await db.getInvitationsByCar(car.id);
-                    resultsText += `\n📮 Приглашений: ${invitations.length}`;
-                    if (invitations.length > 0) {
-                        const lastInvitation = invitations[0]; // Последнее приглашение
-                        resultsText += `\n📅 Последнее: ${formatDate(lastInvitation.invitation_date)}`;
-                        resultsText += `\n📍 Место: ${lastInvitation.location}`;
-                    }
-                } catch (error) {
-                    console.error('Ошибка получения приглашений для авто:', error);
-                }
-            }
-            
-            resultsText += `\n\n`;
-        }
-        
-        const keyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '🔍 Новый поиск', callback_data: 'search_by_number' },
-                        { text: '🎯 Новое приглашение', callback_data: 'create_invitation' }
-                    ],
-                    [
-                        { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
-                    ]
-                ]
-            }
-        };
-        
-        bot.sendMessage(msg.chat.id, resultsText, { 
-            parse_mode: 'Markdown',
-            ...keyboard 
-        });
+        // Используем единую функцию для показа результатов
+        await showSearchResults(msg.chat.id, cleanQuery, cars);
         
     } catch (error) {
         console.error('Ошибка поиска:', error);
@@ -5673,7 +5838,7 @@ async function handlePasswordSetting(msg, userId, userState) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '🔒 Админ панель', callback_data: 'category_admin' }],
-                [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
             ]
         }
     };
@@ -5765,7 +5930,7 @@ async function handlePasswordEntering(msg, userId, userState) {
                 inline_keyboard: [
                     [{ text: '🌐 Веб-дашборд', callback_data: 'web_dashboard' }],
                     [{ text: '👤 Мой профиль', callback_data: 'my_profile' }],
-                    [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                    [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                 ]
             }
         };
@@ -5848,13 +6013,13 @@ bot.onText(/\/cancel/, async (msg) => {
     // Удаляем состояние пользователя
     userStates.delete(userId);
     
-    const cancelKeyboard = {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '📋 Главное меню', callback_data: 'menu' }]
-            ]
-        }
-    };
+            const cancelKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
+                ]
+            }
+        };
     
     bot.sendMessage(msg.chat.id, 
         `❌ ${operationName} отменена\n\n` +
@@ -6115,7 +6280,7 @@ async function handleEditProfile(msg, userId, userState) {
                     inline_keyboard: [
                         [{ text: '✏️ Продолжить редактирование', callback_data: 'edit_profile' }],
                         [{ text: '👤 Мой профиль', callback_data: 'my_profile' }],
-                        [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                        [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                     ]
                 }
             };
@@ -6244,7 +6409,7 @@ async function handleEditProfilePhoto(msg, userId, userState) {
                 inline_keyboard: [
                     [{ text: '✏️ Продолжить редактирование', callback_data: 'edit_profile' }],
                     [{ text: '👤 Мой профиль', callback_data: 'my_profile' }],
-                    [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                    [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                 ]
             }
         };
@@ -6293,7 +6458,7 @@ async function deleteProfilePhoto(msg, userId) {
                 inline_keyboard: [
                     [{ text: '✏️ Продолжить редактирование', callback_data: 'edit_profile' }],
                     [{ text: '👤 Мой профиль', callback_data: 'my_profile' }],
-                    [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                    [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                 ]
             }
         };
@@ -7223,7 +7388,7 @@ async function deleteCarCompletely(msg, userId, carId) {
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '🚗 Мои автомобили', callback_data: 'my_cars' }],
-                            [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                            [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                         ]
                     }
                 };
@@ -7400,7 +7565,7 @@ async function sellCarCompletely(msg, userId, carId) {
                         inline_keyboard: [
                             [{ text: '🚗 Мои автомобили', callback_data: 'my_cars' }],
                             [{ text: '➕ Добавить автомобиль', callback_data: 'add_car' }],
-                            [{ text: '📋 Главное меню', callback_data: 'menu' }]
+                            [{ text: '📋 Главное меню', callback_data: 'back_to_menu' }]
                         ]
                     }
                 };

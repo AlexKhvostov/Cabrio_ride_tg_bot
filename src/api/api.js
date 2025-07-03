@@ -11,10 +11,10 @@ const serverStartTime = new Date();
 function createAPI() {
     const app = express();
     
-    // CORS для поддомена c.cabrioride.by и основного домена
+    // CORS для поддомена club.cabrioride.by и основного домена
     app.use(cors({
         origin: [
-            'https://c.cabrioride.by', 
+            'https://club.cabrioride.by', 
             'https://cabrioride.by',
             'http://localhost:3000',
             'http://localhost:3001'
